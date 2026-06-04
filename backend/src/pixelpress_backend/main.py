@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()  # 加载 .env 文件中的环境变量，包括 LANGSMITH_* 供 LangGraph 自动追踪
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
