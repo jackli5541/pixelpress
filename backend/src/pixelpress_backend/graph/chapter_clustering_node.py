@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from pixelpress_backend.models.domain import LayoutWorkflowState
+from pixelpress_backend.models.workflow_contracts import (
+    ChapterClusteringInput,
+    ChapterPlan,
+    ChapterPlanItem,
+    CleanedPhotoSet,
+)
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 
 """章节聚类节点。
@@ -28,16 +34,22 @@ TODO:
 
 
 def chapter_clustering_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    photo_ids = [item["photo_id"] for item in state.cleaned_photo_set.get("valid_photos", [])]
-    state.chapter_plan = {
-        "album_id": state.request.album_id,
-        "chapters": [
-            {
-                "chapter_id": "chapter-001",
-                "order": 1,
-                "title_candidate": "待实现章节聚类",
-                "photo_ids": photo_ids,
-            }
+    node_input = ChapterClusteringInput(
+        album_id=state.request.album_id,
+        scene_mode=state.request.scene_mode,
+        cleaned_photo_set=CleanedPhotoSet.model_validate(state.cleaned_photo_set),
+    )
+    photo_ids = [item.photo_id for item in node_input.cleaned_photo_set.valid_photos]
+    chapter_plan = ChapterPlan(
+        album_id=node_input.album_id,
+        chapters=[
+            ChapterPlanItem(
+                chapter_id="chapter-001",
+                order=1,
+                title_candidate="待实现章节聚类",
+                photo_ids=photo_ids,
+            )
         ],
-    }
+    )
+    state.chapter_plan = chapter_plan
     return state

@@ -102,21 +102,6 @@ class RepairHint(BaseSchema):
     action: str
 
 
-class LayoutWorkflowState(BaseSchema):
-    request: GenerateLayoutRequest
-    album: AlbumState
-    task: TaskState
-    cleaned_photo_set: JSONDict = Field(default_factory=dict)
-    chapter_plan: JSONDict = Field(default_factory=dict)
-    page_plan: JSONDict = Field(default_factory=dict)
-    page_layouts: JSONDict = Field(default_factory=dict)
-    score_snapshot: JSONDict = Field(default_factory=dict)
-    repair_hints: list[RepairHint] = Field(default_factory=list)
-    decision: str | None = None
-    final_layout: BookLayout | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class TaskStatusResponse(BaseSchema):
     task_id: str
     task_status: TaskStatus

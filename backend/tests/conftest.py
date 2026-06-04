@@ -9,9 +9,16 @@ from pixelpress_backend.models.domain import (
     AlbumState,
     GenerateConstraints,
     GenerateLayoutRequest,
-    LayoutWorkflowState,
     TaskState,
 )
+from pixelpress_backend.models.workflow_contracts import (
+    ChapterPlan,
+    CleanedPhotoSet,
+    LayoutDraft,
+    PagePlan,
+    ScoreSnapshot,
+)
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 from pixelpress_backend.repositories.memory import store
 
 
@@ -55,28 +62,30 @@ def reset_memory_store():
 def workflow_state_factory() -> Callable[..., LayoutWorkflowState]:
     def _factory(
         *,
-        cleaned_photo_set: dict | None = None,
-        chapter_plan: dict | None = None,
-        page_plan: dict | None = None,
-        page_layouts: dict | None = None,
-        score_snapshot: dict | None = None,
+        cleaned_photo_set: dict | CleanedPhotoSet | None = None,
+        chapter_plan: dict | ChapterPlan | None = None,
+        page_plan: dict | PagePlan | None = None,
+        page_layouts: dict | LayoutDraft | None = None,
+        score_snapshot: dict | ScoreSnapshot | None = None,
     ) -> LayoutWorkflowState:
-        state = LayoutWorkflowState(
-            request=_default_request(),
-            album=_default_album_state(),
-            task=_default_task_state(),
-        )
+        state_data = {
+            "request": _default_request(),
+            "album": _default_album_state(),
+            "task": _default_task_state(),
+        }
         if cleaned_photo_set is not None:
-            state.cleaned_photo_set = cleaned_photo_set
+            state_data["cleaned_photo_set"] = cleaned_photo_set
         if chapter_plan is not None:
-            state.chapter_plan = chapter_plan
+            state_data["chapter_plan"] = chapter_plan
         if page_plan is not None:
-            state.page_plan = page_plan
+            state_data["page_plan"] = page_plan
         if page_layouts is not None:
-            state.page_layouts = page_layouts
+            state_data["page_layouts"] = page_layouts
         if score_snapshot is not None:
-            state.score_snapshot = score_snapshot
-        return state
+            state_data["score_snapshot"] = score_snapshot
+        return LayoutWorkflowState(
+            **state_data,
+        )
 
     return _factory
 

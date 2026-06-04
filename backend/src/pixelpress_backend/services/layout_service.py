@@ -9,10 +9,10 @@ from pixelpress_backend.models.domain import (
     BookLayout,
     GenerateLayoutRequest,
     LayoutGenerateResponse,
-    LayoutWorkflowState,
     TaskState,
     TaskStatusResponse,
 )
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 from pixelpress_backend.repositories.memory import store
 from pixelpress_backend.services.exceptions import ConflictError, InvalidStateError, NotFoundError
 

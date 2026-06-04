@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from pixelpress_backend.models.domain import LayoutWorkflowState
+from pixelpress_backend.models.workflow_contracts import (
+    GeneratedPageLayout,
+    LayoutDraft,
+    LayoutGenerationInput,
+    PagePlan,
+)
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 
 """版式生成节点。
@@ -29,19 +35,23 @@ TODO:
 
 
 def layout_generation_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    planned_pages = state.page_plan.get("planned_pages", [])
-    state.page_layouts = {
-        "album_id": state.request.album_id,
-        "page_layouts": [
-            {
-                "page_id": page["page_id"],
-                "template_id": "tpl_single_full_bleed",
-                "layout_score": 0.0,
-                "slots": [],
-                "text_blocks": [],
-                "placeholder": True,
-            }
-            for page in planned_pages
+    node_input = LayoutGenerationInput(
+        album_id=state.request.album_id,
+        page_plan=PagePlan.model_validate(state.page_plan),
+    )
+    page_layouts = LayoutDraft(
+        album_id=node_input.album_id,
+        page_layouts=[
+            GeneratedPageLayout(
+                page_id=page.page_id,
+                template_id="tpl_single_full_bleed",
+                layout_score=0.0,
+                slots=[],
+                text_blocks=[],
+                placeholder=True,
+            )
+            for page in node_input.page_plan.planned_pages
         ],
-    }
+    )
+    state.page_layouts = page_layouts
     return state

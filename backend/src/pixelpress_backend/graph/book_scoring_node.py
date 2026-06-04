@@ -1,7 +1,15 @@
 from __future__ import annotations
 
-from pixelpress_backend.core.enums import LayoutDecision
-from pixelpress_backend.models.domain import LayoutWorkflowState, RepairHint
+from pixelpress_backend.models.domain import RepairHint
+from pixelpress_backend.models.workflow_contracts import (
+    BookScoringInput,
+    BookScoringOutput,
+    ChapterPlan,
+    LayoutDraft,
+    PagePlan,
+    ScoreSnapshot,
+)
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 
 """全书评分节点。
@@ -32,19 +40,17 @@ TODO:
 
 
 def book_scoring_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    state.score_snapshot = {
-        "hard_violations": [],
-        "soft_scores": {
-            "subject_salience": 0.0,
-            "page_balance": 0.0,
-            "story_coherence": 0.0,
-            "layout_diversity": 0.0,
-            "print_safety": 0.0,
-        },
-        "global_scores": {
-            "overall": 0.0,
-        },
-    }
-    state.repair_hints = [RepairHint(target="pipeline", action="fill_real_logic")]
-    state.decision = LayoutDecision.ACCEPT.value
+    BookScoringInput(
+        album_id=state.request.album_id,
+        chapter_plan=ChapterPlan.model_validate(state.chapter_plan),
+        page_plan=PagePlan.model_validate(state.page_plan),
+        page_layouts=LayoutDraft.model_validate(state.page_layouts),
+    )
+    node_output = BookScoringOutput(
+        score_snapshot=ScoreSnapshot(),
+        repair_hints=[RepairHint(target="pipeline", action="fill_real_logic")],
+    )
+    state.score_snapshot = node_output.score_snapshot
+    state.repair_hints = node_output.repair_hints
+    state.decision = node_output.decision
     return state

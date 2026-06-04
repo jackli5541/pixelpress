@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from pixelpress_backend.models.domain import LayoutWorkflowState
+from pixelpress_backend.models.workflow_contracts import (
+    ChapterPlan,
+    CleanedPhotoSet,
+    PagePlan,
+    PaginationPlanningInput,
+    PlannedPage,
+)
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 
 """页面规划节点。
@@ -29,22 +36,29 @@ TODO:
 
 
 def pagination_planning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    chapters = state.chapter_plan.get("chapters", [])
+    node_input = PaginationPlanningInput(
+        album_id=state.request.album_id,
+        constraints=state.request.constraints,
+        cleaned_photo_set=CleanedPhotoSet.model_validate(state.cleaned_photo_set),
+        chapter_plan=ChapterPlan.model_validate(state.chapter_plan),
+    )
+    chapters = node_input.chapter_plan.chapters
     first_photo = None
-    if chapters and chapters[0].get("photo_ids"):
-        first_photo = chapters[0]["photo_ids"][0]
-    state.page_plan = {
-        "album_id": state.request.album_id,
-        "total_pages": max(state.request.constraints.min_pages, 1),
-        "planned_pages": [
-            {
-                "page_id": "page-001",
-                "chapter_id": chapters[0]["chapter_id"] if chapters else "chapter-001",
-                "page_role": "chapter_opening",
-                "candidate_photo_ids": [first_photo] if first_photo else [],
-                "layout_family": "single_full_bleed",
-                "text_need": "chapter_title",
-            }
+    if chapters and chapters[0].photo_ids:
+        first_photo = chapters[0].photo_ids[0]
+    page_plan = PagePlan(
+        album_id=node_input.album_id,
+        total_pages=max(node_input.constraints.min_pages, 1),
+        planned_pages=[
+            PlannedPage(
+                page_id="page-001",
+                chapter_id=chapters[0].chapter_id if chapters else "chapter-001",
+                page_role="chapter_opening",
+                candidate_photo_ids=[first_photo] if first_photo else [],
+                layout_family="single_full_bleed",
+                text_need="chapter_title",
+            )
         ],
-    }
+    )
+    state.page_plan = page_plan
     return state

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from pixelpress_backend.models.domain import LayoutWorkflowState
+from pixelpress_backend.models.workflow_contracts import (
+    CleanedPhotoSet,
+    KeptPhoto,
+    PhotoCleaningInput,
+)
+from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 
 """照片清洗节点。
@@ -27,17 +32,13 @@ TODO:
 
 
 def photo_cleaning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    request = state.request
-    state.cleaned_photo_set = {
-        "album_id": request.album_id,
-        "valid_photos": [
-            {
-                "photo_id": photo_id,
-                "decision": "keep",
-                "rank_weight": 1.0,
-            }
-            for photo_id in request.photo_ids
+    node_input = PhotoCleaningInput(request=state.request)
+    cleaned_photo_set = CleanedPhotoSet(
+        album_id=node_input.request.album_id,
+        valid_photos=[
+            KeptPhoto(photo_id=photo_id, decision="keep", rank_weight=1.0)
+            for photo_id in node_input.request.photo_ids
         ],
-        "dropped_photos": [],
-    }
+    )
+    state.cleaned_photo_set = cleaned_photo_set
     return state
