@@ -37,6 +37,7 @@ class BookLayoutStatus(str, Enum):
     DRAFT = "draft"
     LOCKED = "locked"
     EXPORTED = "exported"
+    ARCHIVED = "archived"
 
 
 class TaskType(str, Enum):
@@ -51,6 +52,7 @@ class LayoutDecision(str, Enum):
     ACCEPT = "accept"
     RETRY_LAYOUT = "retry_layout"
     RETRY_PLANNING = "retry_planning"
+    RETRY_CHAPTER_CLUSTERING = "retry_chapter_clustering"
 
 
 class OperationType(str, Enum):

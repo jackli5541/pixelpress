@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from pixelpress_backend.core.enums import OperationType
+from pixelpress_backend.core.enums import BookLayoutStatus, OperationType
 from pixelpress_backend.models.common import Actor, BaseSchema, JSONDict
 
 
@@ -8,7 +8,7 @@ class UserOperationRequest(BaseSchema):
     operation_id: str
     album_id: str
     base_version: int
-    expected_status: str = "draft"
+    expected_status: BookLayoutStatus = BookLayoutStatus.DRAFT
     op: OperationType
     payload: JSONDict = Field(default_factory=dict)
     actor: Actor

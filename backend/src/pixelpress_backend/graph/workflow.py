@@ -32,6 +32,7 @@ def build_layout_workflow():
             LayoutDecision.ACCEPT.value: "finalize",
             LayoutDecision.RETRY_LAYOUT.value: "layout_generation",
             LayoutDecision.RETRY_PLANNING.value: "pagination_planning",
+            LayoutDecision.RETRY_CHAPTER_CLUSTERING.value: "chapter_clustering",
         },
     )
     graph.add_edge("finalize", END)

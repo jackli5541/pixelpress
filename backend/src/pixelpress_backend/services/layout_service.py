@@ -88,7 +88,12 @@ class LayoutService:
         album.allow_export = False
         album.allow_order = False
 
-        task.status = TaskStatus.COMPLETED
+        if final_layout.is_partial:
+            task.status = TaskStatus.PARTIAL
+            album.allow_export = False
+            album.allow_order = False
+        else:
+            task.status = TaskStatus.COMPLETED
         task.result_version = final_layout.version
 
         return LayoutGenerateResponse(

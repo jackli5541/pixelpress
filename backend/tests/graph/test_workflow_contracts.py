@@ -1,6 +1,8 @@
 from pydantic import ValidationError
 
+from pixelpress_backend.core.enums import BookLayoutStatus, LayoutDecision
 from pixelpress_backend.graph.book_scoring_node import book_scoring_node
+from pixelpress_backend.graph.nodes import finalize_node, score_router
 from pixelpress_backend.graph.layout_generation_node import layout_generation_node
 from pixelpress_backend.graph.pagination_planning_node import pagination_planning_node
 from pixelpress_backend.graph.photo_cleaning_node import photo_cleaning_node
@@ -75,3 +77,35 @@ def test_book_scoring_node_emits_score_contract(
     assert isinstance(result.score_snapshot, ScoreSnapshot)
     assert result.score_snapshot.global_scores.overall == 0.0
     assert result.decision.value == "accept"
+
+
+def test_score_router_supports_retry_chapter_clustering(workflow_state_factory):
+    state = workflow_state_factory()
+    state.decision = LayoutDecision.RETRY_CHAPTER_CLUSTERING
+
+    assert score_router(state) == "retry_chapter_clustering"
+
+
+def test_finalize_node_emits_replayable_metadata(
+    workflow_state_factory,
+    chapter_plan_fixture,
+    page_layouts_fixture,
+):
+    state = workflow_state_factory(
+        chapter_plan=chapter_plan_fixture,
+        page_layouts=page_layouts_fixture,
+    )
+    state.metadata["seed"] = 42
+
+    result = finalize_node(state)
+
+    assert result.final_layout is not None
+    assert result.final_layout.generation_meta["seed"] == 42
+    assert "model_versions" in result.final_layout.generation_meta
+    assert len(result.final_layout.generation_meta["input_hash"]) == 64
+    assert "page_order" in result.final_layout.export_snapshot
+    assert result.final_layout.export_snapshot["page_order"] == ["page-001"]
+
+
+def test_book_layout_status_contract_includes_archived():
+    assert BookLayoutStatus.ARCHIVED.value == "archived"

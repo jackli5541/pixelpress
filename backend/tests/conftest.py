@@ -55,6 +55,7 @@ def reset_memory_store():
     store.tasks.clear()
     store.layouts.clear()
     store.operations.clear()
+    store.operation_receipts.clear()
     store.idempotency_map.clear()
 
 

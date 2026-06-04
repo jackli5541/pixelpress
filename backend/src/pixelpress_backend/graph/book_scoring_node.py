@@ -35,7 +35,7 @@ from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 TODO:
 - 实现硬规则检查、软评分计算、全书节奏评估
-- 根据问题定位输出 `accept | retry_layout | retry_planning`
+- 根据问题定位输出 `accept | retry_layout | retry_planning | retry_chapter_clustering`
 """
 
 
