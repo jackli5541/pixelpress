@@ -4,9 +4,6 @@ from pixelpress_backend.models.domain import RepairHint
 from pixelpress_backend.models.workflow_contracts import (
     BookScoringInput,
     BookScoringOutput,
-    ChapterPlan,
-    LayoutDraft,
-    PagePlan,
     ScoreSnapshot,
 )
 from pixelpress_backend.models.workflow_state import LayoutWorkflowState
@@ -40,13 +37,28 @@ TODO:
 
 
 def book_scoring_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    BookScoringInput(
+    book_layout = {
+        "pages": state.page_layouts or [],
+        "chapters": [
+            {
+                "chapter_id": chapter.chapter_id,
+                "page_ids": [
+                    page.page_id for page in (state.page_plan.planned_pages if state.page_plan else []) if page.chapter_id == chapter.chapter_id
+                ],
+            }
+            for chapter in (state.chapter_plan.chapters if state.chapter_plan else [])
+        ],
+    }
+    node_input = BookScoringInput(
         album_id=state.request.album_id,
-        chapter_plan=ChapterPlan.model_validate(state.chapter_plan),
-        page_plan=PagePlan.model_validate(state.page_plan),
-        page_layouts=LayoutDraft.model_validate(state.page_layouts),
+        book_layout=book_layout,
+        context={
+            "hero_person_id": state.request.constraints.hero_person_id,
+            "scene_mode": state.request.scene_mode,
+        },
     )
     node_output = BookScoringOutput(
+        album_id=node_input.album_id,
         score_snapshot=ScoreSnapshot(),
         repair_hints=[RepairHint(target="pipeline", action="fill_real_logic")],
     )

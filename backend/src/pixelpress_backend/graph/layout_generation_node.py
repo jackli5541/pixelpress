@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pixelpress_backend.models.workflow_contracts import (
     GeneratedPageLayout,
-    LayoutDraft,
     LayoutGenerationInput,
+    LayoutGenerationOutput,
     PagePlan,
 )
 from pixelpress_backend.models.workflow_state import LayoutWorkflowState
@@ -37,21 +37,30 @@ TODO:
 def layout_generation_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
     node_input = LayoutGenerationInput(
         album_id=state.request.album_id,
+        book_size=state.request.book_size,
+        style=state.request.style,
         page_plan=PagePlan.model_validate(state.page_plan),
     )
-    page_layouts = LayoutDraft(
+    page_layouts = [
+        GeneratedPageLayout(
+            page_id=page.page_id,
+            template_id="tpl_single_full_bleed",
+            layout_score=0.0,
+            slots=[],
+            text_blocks=[],
+            render_hints={"background": "#FFFFFF", "bleed_mm": 3},
+            placeholder=True,
+        )
+        for page in node_input.page_plan.planned_pages
+    ]
+    node_output = LayoutGenerationOutput(
         album_id=node_input.album_id,
-        page_layouts=[
-            GeneratedPageLayout(
-                page_id=page.page_id,
-                template_id="tpl_single_full_bleed",
-                layout_score=0.0,
-                slots=[],
-                text_blocks=[],
-                placeholder=True,
-            )
-            for page in node_input.page_plan.planned_pages
-        ],
+        page_layouts=page_layouts,
+        generation_summary={
+            "page_count": len(node_input.page_plan.planned_pages),
+            "fallback_page_count": len(node_input.page_plan.planned_pages),
+        },
     )
-    state.page_layouts = page_layouts
+    state.page_layouts = node_output.page_layouts
+    state.metadata["generation_summary"] = node_output.generation_summary.model_dump(mode="python")
     return state

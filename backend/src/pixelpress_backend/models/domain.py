@@ -21,9 +21,39 @@ class GenerateConstraints(BaseSchema):
     must_include: list[str] = Field(default_factory=list)
     must_exclude: list[str] = Field(default_factory=list)
     hero_person_id: str | None = None
+    chapter_count_hint: int | None = None
     min_pages: int = 20
     max_pages: int = 60
     avoid_spread: bool = False
+
+
+class RelativeFrame(BaseSchema):
+    x: float = 0.0
+    y: float = 0.0
+    w: float = 0.0
+    h: float = 0.0
+
+
+class PhotoExif(BaseSchema):
+    captured_at: datetime | None = None
+    gps: str | None = None
+
+
+class PhotoFeatures(BaseSchema):
+    embedding: str | None = None
+    face_boxes: list[RelativeFrame] = Field(default_factory=list)
+    subject_boxes: list[RelativeFrame] = Field(default_factory=list)
+    saliency_map: str | None = None
+
+
+class PhotoAsset(BaseSchema):
+    photo_id: str
+    image_url: str | None = None
+    width: int | None = None
+    height: int | None = None
+    orientation: str | None = None
+    exif: PhotoExif = Field(default_factory=PhotoExif)
+    features: PhotoFeatures = Field(default_factory=PhotoFeatures)
 
 
 class GenerateLayoutRequest(BaseSchema):
@@ -34,6 +64,7 @@ class GenerateLayoutRequest(BaseSchema):
     binding: str = "hardcover"
     style: str = "minimal"
     photo_ids: list[str]
+    photo_assets: list[PhotoAsset] = Field(default_factory=list)
     photo_order: str = "upload_order"
     force_mode: str = "normal"
     constraints: GenerateConstraints = Field(default_factory=GenerateConstraints)

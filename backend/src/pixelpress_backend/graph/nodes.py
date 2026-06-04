@@ -34,7 +34,7 @@ def finalize_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
         album_id=state.request.album_id,
         version=next_version,
         base_version=state.request.base_version,
-        pages=state.page_layouts.model_dump(mode="python")["page_layouts"] if state.page_layouts else [],
+        pages=[page.model_dump(mode="python") for page in state.page_layouts] if state.page_layouts else [],
         chapters=state.chapter_plan.model_dump(mode="python")["chapters"] if state.chapter_plan else [],
         score_snapshot=state.score_snapshot.model_dump(mode="python"),
         generation_meta={
@@ -56,9 +56,7 @@ def finalize_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
             "bleed_mm": 3,
             "safe_margin_mm": 5,
             "color_profile": "sRGB-preview",
-            "page_order": [page["page_id"] for page in state.page_layouts.model_dump(mode="python")["page_layouts"]]
-            if state.page_layouts
-            else [],
+            "page_order": [page.page_id for page in state.page_layouts] if state.page_layouts else [],
             "thumbnail_profile": "default",
         },
         export_snapshot={
@@ -69,9 +67,7 @@ def finalize_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
             "font_pack_version": "placeholder",
             "color_space_strategy": "CMYK-placeholder",
             "font_embed_mode": "subset",
-            "page_order": [page["page_id"] for page in state.page_layouts.model_dump(mode="python")["page_layouts"]]
-            if state.page_layouts
-            else [],
+            "page_order": [page.page_id for page in state.page_layouts] if state.page_layouts else [],
             "image_sampling_policy": "placeholder",
             "compression_policy": "placeholder",
             "render_engine_version": "placeholder",

@@ -10,7 +10,7 @@ from pixelpress_backend.models.domain import AlbumState, BookLayout, GenerateLay
 from pixelpress_backend.models.workflow_contracts import (
     ChapterPlan,
     CleanedPhotoSet,
-    LayoutDraft,
+    GeneratedPageLayout,
     PagePlan,
     ScoreSnapshot,
 )
@@ -23,7 +23,7 @@ class LayoutWorkflowState(BaseSchema):
     cleaned_photo_set: CleanedPhotoSet | None = None
     chapter_plan: ChapterPlan | None = None
     page_plan: PagePlan | None = None
-    page_layouts: LayoutDraft | None = None
+    page_layouts: list[GeneratedPageLayout] | None = None
     score_snapshot: ScoreSnapshot = Field(default_factory=ScoreSnapshot)
     repair_hints: list[RepairHint] = Field(default_factory=list)
     decision: LayoutDecision | None = None

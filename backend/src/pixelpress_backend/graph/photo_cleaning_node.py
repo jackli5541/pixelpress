@@ -32,13 +32,34 @@ TODO:
 
 
 def photo_cleaning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
-    node_input = PhotoCleaningInput(request=state.request)
+    node_input = PhotoCleaningInput(
+        album_id=state.request.album_id,
+        scene_mode=state.request.scene_mode,
+        book_size=state.request.book_size,
+        photo_assets=state.request.photo_assets,
+        constraints=state.request.constraints,
+    )
+    asset_lookup = {asset.photo_id: asset for asset in node_input.photo_assets}
+    ordered_photo_ids = state.request.photo_ids if state.request.photo_ids else [asset.photo_id for asset in node_input.photo_assets]
     cleaned_photo_set = CleanedPhotoSet(
-        album_id=node_input.request.album_id,
+        album_id=node_input.album_id,
         valid_photos=[
-            KeptPhoto(photo_id=photo_id, decision="keep", rank_weight=1.0)
-            for photo_id in node_input.request.photo_ids
+            KeptPhoto(
+                photo_id=photo_id,
+                decision="keep",
+                rank_weight=1.0,
+                captured_at=asset_lookup.get(photo_id).exif.captured_at if photo_id in asset_lookup else None,
+                embedding_ref=asset_lookup.get(photo_id).features.embedding if photo_id in asset_lookup else None,
+                orientation=asset_lookup.get(photo_id).orientation if photo_id in asset_lookup else None,
+            )
+            for photo_id in ordered_photo_ids
         ],
+        cleaning_summary={
+            "input_count": len(ordered_photo_ids),
+            "valid_count": len(ordered_photo_ids),
+            "dropped_count": 0,
+            "duplicate_groups": 0,
+        },
     )
     state.cleaned_photo_set = cleaned_photo_set
     return state
