@@ -8,7 +8,6 @@ from pixelpress_backend.graph.pagination_planning_node import pagination_plannin
 from pixelpress_backend.graph.photo_cleaning_node import photo_cleaning_node
 from pixelpress_backend.models.workflow_contracts import (
     CleanedPhotoSet,
-    LayoutDraft,
     PagePlan,
     ScoreSnapshot,
 )
@@ -22,6 +21,7 @@ def test_photo_cleaning_node_emits_cleaned_photo_contract(workflow_state_factory
     assert isinstance(result.cleaned_photo_set, CleanedPhotoSet)
     assert result.cleaned_photo_set.album_id == "album-test"
     assert [item.photo_id for item in result.cleaned_photo_set.valid_photos] == ["p1", "p2", "p3"]
+    assert result.cleaned_photo_set.cleaning_summary.input_count == 3
 
 
 def test_planning_and_layout_nodes_emit_structured_contracts(
@@ -36,13 +36,15 @@ def test_planning_and_layout_nodes_emit_structured_contracts(
 
     planned_state = pagination_planning_node(state)
     assert isinstance(planned_state.page_plan, PagePlan)
-    assert planned_state.page_plan.total_pages == 1
+    assert planned_state.page_plan.total_pages == len(planned_state.page_plan.planned_pages)
     assert planned_state.page_plan.planned_pages[0].chapter_id == "chapter-001"
+    assert planned_state.page_plan.planned_pages[0].page_role == "chapter_opening"
 
     layout_state = layout_generation_node(planned_state)
-    assert isinstance(layout_state.page_layouts, LayoutDraft)
-    assert layout_state.page_layouts.page_layouts[0].page_id == "page-001"
-    assert layout_state.page_layouts.page_layouts[0].template_id == "tpl_single_full_bleed"
+    assert isinstance(layout_state.page_layouts, list)
+    assert layout_state.page_layouts[0].page_id == "page-001"
+    assert layout_state.page_layouts[0].template_id == "tpl_single_full_bleed"
+    assert layout_state.metadata["generation_summary"]["page_count"] == len(layout_state.page_layouts)
 
 
 def test_workflow_state_requires_structured_page_plan(workflow_state_factory):
@@ -50,8 +52,8 @@ def test_workflow_state_requires_structured_page_plan(workflow_state_factory):
         workflow_state_factory(
             cleaned_photo_set={"album_id": "album-test", "valid_photos": [], "dropped_photos": []},
             chapter_plan={"album_id": "album-test", "chapters": []},
-            page_plan={"album_id": "album-test"},
-            page_layouts={"album_id": "album-test", "page_layouts": []},
+            page_plan={},
+            page_layouts=[],
         )
     except ValidationError:
         return
