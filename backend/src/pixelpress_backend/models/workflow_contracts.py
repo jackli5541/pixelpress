@@ -77,8 +77,9 @@ class ChapterPlanItem(BaseSchema):
     cover_photo_id: str | None = None
     key_person_ids: list[str] = Field(default_factory=list)
     scene_tags: list[str] = Field(default_factory=list)
-    time_range: TimeRange = Field(default_factory=TimeRange)
+    time_range: TimeRange | None = Field(default_factory=TimeRange)
     cluster_confidence: float | None = None
+    degrade_reasons: list[str] = Field(default_factory=list)
 
 
 class ClusteringSummary(BaseSchema):
