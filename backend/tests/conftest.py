@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
+from pathlib import Path
 
 import pytest
 
@@ -14,7 +16,7 @@ from pixelpress_backend.models.domain import (
 from pixelpress_backend.models.workflow_contracts import (
     ChapterPlan,
     CleanedPhotoSet,
-    LayoutDraft,
+    GeneratedPageLayout,
     PagePlan,
     ScoreSnapshot,
 )
@@ -66,7 +68,7 @@ def workflow_state_factory() -> Callable[..., LayoutWorkflowState]:
         cleaned_photo_set: dict | CleanedPhotoSet | None = None,
         chapter_plan: dict | ChapterPlan | None = None,
         page_plan: dict | PagePlan | None = None,
-        page_layouts: dict | LayoutDraft | None = None,
+        page_layouts: list[dict] | list[GeneratedPageLayout] | None = None,
         score_snapshot: dict | ScoreSnapshot | None = None,
     ) -> LayoutWorkflowState:
         state_data = {
@@ -122,7 +124,6 @@ def chapter_plan_fixture() -> dict:
 @pytest.fixture
 def page_plan_fixture() -> dict:
     return {
-        "album_id": "album-test",
         "total_pages": 1,
         "planned_pages": [
             {
@@ -138,16 +139,30 @@ def page_plan_fixture() -> dict:
 
 
 @pytest.fixture
-def page_layouts_fixture() -> dict:
-    return {
-        "album_id": "album-test",
-        "page_layouts": [
-            {
-                "page_id": "page-001",
-                "template_id": "tpl_single_full_bleed",
-                "layout_score": 0.8,
-                "slots": [],
-                "text_blocks": [],
-            }
-        ],
-    }
+def page_layouts_fixture() -> list[dict]:
+    return [
+        {
+            "page_id": "page-001",
+            "template_id": "tpl_single_full_bleed",
+            "layout_score": 0.8,
+            "slots": [],
+            "text_blocks": [],
+        }
+    ]
+
+
+@pytest.fixture
+def json_artifact_writer() -> Callable[[str, object], Path]:
+    artifact_root = Path(__file__).resolve().parent / "artifacts"
+    artifact_root.mkdir(parents=True, exist_ok=True)
+
+    def _write(relative_path: str, payload: object) -> Path:
+        output_path = artifact_root / relative_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return output_path
+
+    return _write
