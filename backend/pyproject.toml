@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixelpress-backend"
+version = "0.1.0"
+description = "FastAPI + LangGraph backend skeleton for PixelPress."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0,<1.0.0",
+  "uvicorn>=0.31.1,<1.0.0",
+  "pydantic-settings>=2.6.0,<3.0.0",
+  "langgraph>=1.1.0,<2.0.0",
+  "langsmith>=0.4.0,<1.0.0",
+  "python-dotenv>=1.0.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0.0,<10.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0.0,<10.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
