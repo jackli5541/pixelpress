@@ -39,11 +39,32 @@ class PhotoExif(BaseSchema):
     gps: str | None = None
 
 
+class PhotoQualityScores(BaseSchema):
+    sharpness: float | None = None
+    exposure: float | None = None
+    blur: float | None = None
+    noise: float | None = None
+    face_integrity: float | None = None
+    closed_eye_prob: float | None = None
+    overall: float | None = None
+
+
 class PhotoFeatures(BaseSchema):
-    embedding: str | None = None
+    embedding: list[float] | None = None
+    embedding_model_version: str | None = None
     face_boxes: list[RelativeFrame] = Field(default_factory=list)
+    face_ids: list[str] = Field(default_factory=list)
     subject_boxes: list[RelativeFrame] = Field(default_factory=list)
     saliency_map: str | None = None
+    saliency_model_version: str | None = None
+    quality_scores: PhotoQualityScores = Field(default_factory=PhotoQualityScores)
+    perceptual_hash: str | None = None
+    duplicate_group_id: str | None = None
+    scene_tags: list[str] = Field(default_factory=list)
+    person_ids: list[str] = Field(default_factory=list)
+    dominant_color: str | None = None
+    feature_extracted_at: str | None = None
+    feature_status: str | None = None
 
 
 class PhotoAsset(BaseSchema):
