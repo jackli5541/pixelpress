@@ -1,0 +1,142 @@
+{
+  "config": {
+    "story_planner_enabled": true,
+    "story_planner_provider": "openai_compatible",
+    "story_planner_model_name": "deepseek-chat",
+    "story_planner_base_url": "https://api.deepseek.com/v1",
+    "story_planner_api_key_configured": true
+  },
+  "page_plan": {
+    "total_pages": 4,
+    "chapter_page_budgets": [
+      {
+        "chapter_id": "chapter-001",
+        "start_page": 1,
+        "end_page": 4,
+        "page_count": 4
+      }
+    ],
+    "planned_pages": [
+      {
+        "page_id": "page-001",
+        "chapter_id": "chapter-001",
+        "page_role": "chapter_opening",
+        "candidate_photo_ids": [
+          "p1"
+        ],
+        "layout_family": "chapter_cover",
+        "is_spread": false,
+        "text_need": "chapter_title"
+      },
+      {
+        "page_id": "page-002",
+        "chapter_id": "chapter-001",
+        "page_role": "hero",
+        "candidate_photo_ids": [
+          "p2"
+        ],
+        "layout_family": "single_full_bleed",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-003",
+        "chapter_id": "chapter-001",
+        "page_role": "collage",
+        "candidate_photo_ids": [
+          "p3",
+          "p5"
+        ],
+        "layout_family": "grid_nine",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-004",
+        "chapter_id": "chapter-001",
+        "page_role": "ending",
+        "candidate_photo_ids": [
+          "p6",
+          "p7"
+        ],
+        "layout_family": "double_side_by_side",
+        "is_spread": false,
+        "text_need": "none"
+      }
+    ]
+  },
+  "planning_summary": {
+    "selected_photo_count": 6,
+    "unused_photo_count": 1,
+    "spread_count": 0
+  },
+  "planning_debug": {
+    "candidate_plan_count": 1,
+    "selected_candidate_index": 0,
+    "selected_candidate_score": 8.658628571428572,
+    "hero_focus_pages": 3,
+    "hero_focus_target": 1,
+    "chapter_strengths": {
+      "chapter-001": 17.989
+    }
+  },
+  "story_planner": {
+    "provider": "openai_compatible",
+    "chapters": [
+      {
+        "chapter_id": "chapter-001",
+        "provider": "openai_compatible",
+        "chapter_theme": "Arrival and Exploration",
+        "story_arc": "The hero arrives and explores the city, experiencing street scenes and food, ending with a night scene.",
+        "page_suggestions": [
+          {
+            "page_index": 0,
+            "page_role": "chapter_opening",
+            "candidate_photo_ids": [
+              "p1"
+            ],
+            "narrative_purpose": "Establish the chapter with the hero's arrival.",
+            "reason": "p1 has highest rank and 'arrival' tag, suitable for opening."
+          },
+          {
+            "page_index": 1,
+            "page_role": "hero",
+            "candidate_photo_ids": [
+              "p2",
+              "p4"
+            ],
+            "narrative_purpose": "Show the hero in action, exploring the street and food.",
+            "reason": "p2 and p4 feature hero-1 with street/food tags, high rank."
+          },
+          {
+            "page_index": 2,
+            "page_role": "collage",
+            "candidate_photo_ids": [
+              "p3",
+              "p5",
+              "p7"
+            ],
+            "narrative_purpose": "Provide variety with friend and detail shots.",
+            "reason": "p3 (friend-1, street), p5 (friend-1, food), p7 (detail) add diversity."
+          },
+          {
+            "page_index": 3,
+            "page_role": "ending",
+            "candidate_photo_ids": [
+              "p6"
+            ],
+            "narrative_purpose": "Conclude the chapter with a night scene.",
+            "reason": "p6 is landscape with 'night' tag, good for closing."
+          }
+        ],
+        "page_count": 4,
+        "applied_page_indexes": [
+          0,
+          1,
+          2,
+          3
+        ]
+      }
+    ]
+  }
+}

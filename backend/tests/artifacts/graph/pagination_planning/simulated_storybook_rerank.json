@@ -1,0 +1,478 @@
+{
+  "request": {
+    "album_id": "album-test",
+    "idempotency_key": "idem-test",
+    "scene_mode": "annual",
+    "book_size": "A4_square",
+    "binding": "hardcover",
+    "style": "minimal",
+    "photo_ids": [
+      "p1",
+      "p2",
+      "p3"
+    ],
+    "photo_assets": [],
+    "photo_order": "upload_order",
+    "force_mode": "normal",
+    "constraints": {
+      "must_include": [],
+      "must_exclude": [],
+      "hero_person_id": "hero-001",
+      "chapter_count_hint": null,
+      "min_pages": 10,
+      "max_pages": 10,
+      "avoid_spread": false
+    },
+    "base_version": null
+  },
+  "cleaned_photo_set": {
+    "album_id": "album-simulated",
+    "valid_photos": [
+      {
+        "photo_id": "s1",
+        "decision": "keep",
+        "rank_weight": 0.98,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [
+          "hero-001"
+        ],
+        "scene_tags": [
+          "arrival"
+        ],
+        "orientation": "landscape",
+        "is_duplicate": false
+      },
+      {
+        "photo_id": "s2",
+        "decision": "keep",
+        "rank_weight": 0.95,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [
+          "hero-001"
+        ],
+        "scene_tags": [
+          "arrival"
+        ],
+        "orientation": null,
+        "is_duplicate": false
+      },
+      {
+        "photo_id": "s3",
+        "decision": "keep",
+        "rank_weight": 0.92,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [
+          "hero-001"
+        ],
+        "scene_tags": [
+          "street"
+        ],
+        "orientation": null,
+        "is_duplicate": false
+      },
+      {
+        "photo_id": "s4",
+        "decision": "keep",
+        "rank_weight": 0.9,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [
+          "hero-001"
+        ],
+        "scene_tags": [
+          "street"
+        ],
+        "orientation": null,
+        "is_duplicate": false
+      },
+      {
+        "photo_id": "s5",
+        "decision": "keep",
+        "rank_weight": 0.88,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "meal"
+        ],
+        "orientation": null,
+        "is_duplicate": false
+      },
+      {
+        "photo_id": "s6",
+        "decision": "keep",
+        "rank_weight": 0.86,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "meal"
+        ],
+        "orientation": null,
+        "is_duplicate": false
+      },
+      {
+        "photo_id": "w1",
+        "decision": "keep",
+        "rank_weight": 0.35,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "room"
+        ],
+        "orientation": null,
+        "is_duplicate": true
+      },
+      {
+        "photo_id": "w2",
+        "decision": "keep",
+        "rank_weight": 0.32,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "room"
+        ],
+        "orientation": null,
+        "is_duplicate": true
+      },
+      {
+        "photo_id": "w3",
+        "decision": "keep",
+        "rank_weight": 0.3,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "room"
+        ],
+        "orientation": null,
+        "is_duplicate": true
+      },
+      {
+        "photo_id": "w4",
+        "decision": "keep",
+        "rank_weight": 0.28,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "room"
+        ],
+        "orientation": null,
+        "is_duplicate": true
+      },
+      {
+        "photo_id": "w5",
+        "decision": "keep",
+        "rank_weight": 0.26,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "room"
+        ],
+        "orientation": null,
+        "is_duplicate": true
+      },
+      {
+        "photo_id": "w6",
+        "decision": "keep",
+        "rank_weight": 0.24,
+        "quality_score": null,
+        "duplicate_score": null,
+        "saliency_score": null,
+        "face_integrity_score": null,
+        "drop_reason": null,
+        "captured_at": null,
+        "location_cluster": null,
+        "embedding_ref": null,
+        "person_ids": [],
+        "scene_tags": [
+          "room"
+        ],
+        "orientation": null,
+        "is_duplicate": true
+      }
+    ],
+    "dropped_photos": [],
+    "cleaning_summary": {
+      "input_count": 0,
+      "valid_count": 0,
+      "dropped_count": 0,
+      "duplicate_groups": 0
+    }
+  },
+  "chapter_plan": {
+    "album_id": "album-simulated",
+    "chapters": [
+      {
+        "chapter_id": "chapter-strong",
+        "order": 1,
+        "title_candidate": "高光章节",
+        "photo_ids": [
+          "s1",
+          "s2",
+          "s3",
+          "s4",
+          "s5",
+          "s6"
+        ],
+        "cover_photo_id": "s1",
+        "key_person_ids": [],
+        "scene_tags": [],
+        "time_range": {
+          "start": null,
+          "end": null
+        },
+        "cluster_confidence": null
+      },
+      {
+        "chapter_id": "chapter-weak",
+        "order": 2,
+        "title_candidate": "补充章节",
+        "photo_ids": [
+          "w1",
+          "w2",
+          "w3",
+          "w4",
+          "w5",
+          "w6"
+        ],
+        "cover_photo_id": null,
+        "key_person_ids": [],
+        "scene_tags": [],
+        "time_range": {
+          "start": null,
+          "end": null
+        },
+        "cluster_confidence": null
+      }
+    ],
+    "clustering_summary": {
+      "chapter_count": 0,
+      "avg_photos_per_chapter": 0,
+      "low_confidence_chapters": []
+    }
+  },
+  "page_plan": {
+    "total_pages": 10,
+    "chapter_page_budgets": [
+      {
+        "chapter_id": "chapter-strong",
+        "start_page": 1,
+        "end_page": 8,
+        "page_count": 8
+      },
+      {
+        "chapter_id": "chapter-weak",
+        "start_page": 9,
+        "end_page": 10,
+        "page_count": 2
+      }
+    ],
+    "planned_pages": [
+      {
+        "page_id": "page-001",
+        "chapter_id": "chapter-strong",
+        "page_role": "chapter_opening",
+        "candidate_photo_ids": [
+          "s1"
+        ],
+        "layout_family": "chapter_cover",
+        "is_spread": false,
+        "text_need": "chapter_title"
+      },
+      {
+        "page_id": "page-002",
+        "chapter_id": "chapter-strong",
+        "page_role": "hero",
+        "candidate_photo_ids": [
+          "s2"
+        ],
+        "layout_family": "single_full_bleed",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-003",
+        "chapter_id": "chapter-strong",
+        "page_role": "transition",
+        "candidate_photo_ids": [
+          "s3"
+        ],
+        "layout_family": "single_full_bleed",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-004",
+        "chapter_id": "chapter-strong",
+        "page_role": "collage",
+        "candidate_photo_ids": [
+          "s4",
+          "s5"
+        ],
+        "layout_family": "grid_nine",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-005",
+        "chapter_id": "chapter-strong",
+        "page_role": "detail",
+        "candidate_photo_ids": [
+          "s6"
+        ],
+        "layout_family": "single_full_bleed",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-006",
+        "chapter_id": "chapter-strong",
+        "page_role": "collage",
+        "candidate_photo_ids": [
+          "s1",
+          "s2"
+        ],
+        "layout_family": "triple_narrative",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-007",
+        "chapter_id": "chapter-strong",
+        "page_role": "summary",
+        "candidate_photo_ids": [
+          "s3",
+          "s4"
+        ],
+        "layout_family": "double_side_by_side",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-008",
+        "chapter_id": "chapter-strong",
+        "page_role": "ending",
+        "candidate_photo_ids": [
+          "s5",
+          "s6"
+        ],
+        "layout_family": "double_side_by_side",
+        "is_spread": false,
+        "text_need": "none"
+      },
+      {
+        "page_id": "page-009",
+        "chapter_id": "chapter-weak",
+        "page_role": "chapter_opening",
+        "candidate_photo_ids": [
+          "w1"
+        ],
+        "layout_family": "chapter_cover",
+        "is_spread": false,
+        "text_need": "chapter_title"
+      },
+      {
+        "page_id": "page-010",
+        "chapter_id": "chapter-weak",
+        "page_role": "hero",
+        "candidate_photo_ids": [
+          "w2"
+        ],
+        "layout_family": "single_full_bleed",
+        "is_spread": false,
+        "text_need": "none"
+      }
+    ]
+  },
+  "planning_summary": {
+    "selected_photo_count": 8,
+    "unused_photo_count": 4,
+    "spread_count": 0
+  },
+  "planning_debug": {
+    "candidate_plan_count": 2,
+    "selected_candidate_index": 1,
+    "selected_candidate_score": 14.7712,
+    "hero_focus_pages": 6,
+    "hero_focus_target": 1,
+    "chapter_strengths": {
+      "chapter-strong": 18.88,
+      "chapter-weak": 7.333
+    }
+  },
+  "story_planner": null
+}
