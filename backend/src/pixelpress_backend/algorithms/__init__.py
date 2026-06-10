@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pixelpress_backend.algorithms.chapter_clustering import ChapterClusteringAlgorithm
 from pixelpress_backend.algorithms.feature_extraction import (
     CLIPEmbeddingGenerator,
     DuplicateDetector,
@@ -12,15 +11,12 @@ from pixelpress_backend.algorithms.feature_extraction import (
     YOLOFaceDetector,
     YOLOSubjectDetector,
 )
-from pixelpress_backend.algorithms.pagination_planning import PaginationPlanningAlgorithm
 
 __all__ = [
-    "ChapterClusteringAlgorithm",
     "CLIPEmbeddingGenerator",
     "DuplicateDetector",
     "FaceNetClusterer",
     "ImageQualityAnalyzer",
-    "PaginationPlanningAlgorithm",
     "PerceptualHash",
     "SceneTagGenerator",
     "U2NetSaliencyGenerator",

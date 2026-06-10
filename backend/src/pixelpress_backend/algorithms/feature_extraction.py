@@ -61,7 +61,8 @@ class ImageQualityAnalyzer:
             cv_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
             laplacian = cv2.Laplacian(gray, cv2.CV_64F)
-            scores["sharpness"] = float(np.var(laplacian))
+            sharpness = float(np.var(laplacian))
+            scores["sharpness"] = min(sharpness / 100.0, 1.0)
             scores["blur"] = float(np.abs(laplacian).mean())
             hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
             hist_norm = hist.ravel() / hist.sum()
@@ -73,7 +74,10 @@ class ImageQualityAnalyzer:
             scores["noise"] = float(min(noise_score / 10.0, 1.0))
         valid_scores = [v for v in [scores["sharpness"], scores["exposure"], scores["blur"]] if v is not None]
         if valid_scores:
-            scores["overall"] = float(sum(valid_scores) / len(valid_scores))
+            overall = float(sum(valid_scores) / len(valid_scores))
+            scores["overall"] = max(overall, 0.5)
+        else:
+            scores["overall"] = 0.5
         return scores
 
 

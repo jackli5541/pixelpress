@@ -33,8 +33,8 @@ def photo_cleaning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
         constraints=state.request.constraints,
     )
 
-    asset_lookup = {asset.photo_id: asset for asset in node_input.photo_assets}
-    ordered_photo_ids = state.request.photo_ids if state.request.photo_ids else [asset.photo_id for asset in node_input.photo_assets]
+    asset_lookup = {asset.photo_id: asset for asset in (node_input.photo_assets or [])}
+    ordered_photo_ids = state.request.photo_ids if state.request.photo_ids else [asset.photo_id for asset in (node_input.photo_assets or [])]
 
     valid_photos = []
     dropped_photos = []
@@ -44,13 +44,7 @@ def photo_cleaning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
         asset = asset_lookup.get(photo_id)
         features = PhotoFeatures()
 
-        if asset and asset.image_url:
-            try:
-                img = Image.open(io.BytesIO(b"test"))
-            except Exception:
-                img = Image.new("RGB", (100, 100), color="white")
-        else:
-            img = Image.new("RGB", (100, 100), color="white")
+        img = Image.new("RGB", (100, 100), color="white")
 
         features.perceptual_hash = PerceptualHash.compute(img)
 
@@ -61,20 +55,20 @@ def photo_cleaning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
         features.embedding_model_version = "clip-vit-b-32"
 
         face_boxes = YOLOFaceDetector.detect(img)
-        if asset and asset.width and asset.height:
-            features.face_boxes = [
-                RelativeFrame(x=b["x"] / asset.width, y=b["y"] / asset.height,
-                              w=b["w"] / asset.width, h=b["h"] / asset.height)
-                for b in face_boxes
-            ]
+        width = asset.width if asset else 100
+        height = asset.height if asset else 100
+        features.face_boxes = [
+            RelativeFrame(x=b["x"] / width, y=b["y"] / height,
+                          w=b["w"] / width, h=b["h"] / height)
+            for b in face_boxes
+        ]
 
         subject_boxes = YOLOSubjectDetector.detect(img)
-        if asset and asset.width and asset.height:
-            features.subject_boxes = [
-                RelativeFrame(x=b["x"] / asset.width, y=b["y"] / asset.height,
-                              w=b["w"] / asset.width, h=b["h"] / asset.height)
-                for b in subject_boxes
-            ]
+        features.subject_boxes = [
+            RelativeFrame(x=b["x"] / width, y=b["y"] / height,
+                          w=b["w"] / width, h=b["h"] / height)
+            for b in subject_boxes
+        ]
 
         features.saliency_map = U2NetSaliencyGenerator.generate(img)
         features.saliency_model_version = "u2net-fallback"
@@ -127,7 +121,7 @@ def photo_cleaning_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
                 saliency_score=None,
                 face_integrity_score=None,
                 drop_reason=drop_reason,
-                captured_at=asset.exif.captured_at if asset else None,
+                captured_at=asset.exif.captured_at if asset and asset.exif else None,
                 location_cluster=None,
                 embedding_ref=str(features.embedding[:10]) if features.embedding else None,
                 person_ids=features.person_ids,
