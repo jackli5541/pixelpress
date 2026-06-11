@@ -110,7 +110,8 @@ uv run uvicorn --app-dir src pixelpress_backend.main:app --reload
   - `pagination_planning_node.py`：显式消费 `ChapterPlan`，产出强类型 `PagePlan`
   - `layout_generation_node.py`：显式消费 `PagePlan`，产出强类型 `LayoutDraft`
   - `book_scoring_node.py`：显式校验 `ChapterPlan / PagePlan / LayoutDraft`，产出强类型 `ScoreSnapshot` 和枚举型 `decision`
-  - `graph/nodes.py`：`finalize_node` 直接消费强类型状态字段组装最终 `BookLayout`
+  - `finalize_node.py`：`finalize_node` 直接消费强类型状态字段组装最终 `BookLayout`
+  - `routing.py`：集中承载 `score_router` 等工作流路由函数
 - 新增测试 `tests/graph/test_workflow_contracts.py`
   - 校验节点输出是否符合契约
   - 校验强类型状态在缺少必填字段时是否会提前抛出校验错误

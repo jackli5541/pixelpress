@@ -3,12 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 
-from pixelpress_backend.core.enums import LayoutDecision
-from pixelpress_backend.graph.book_scoring_node import book_scoring_node
-from pixelpress_backend.graph.chapter_clustering_node import chapter_clustering_node
-from pixelpress_backend.graph.layout_generation_node import layout_generation_node
-from pixelpress_backend.graph.pagination_planning_node import pagination_planning_node
-from pixelpress_backend.graph.photo_cleaning_node import photo_cleaning_node
 from pixelpress_backend.models.domain import BookLayout
 from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
@@ -74,9 +68,3 @@ def finalize_node(state: LayoutWorkflowState) -> LayoutWorkflowState:
         },
     )
     return state
-
-
-def score_router(state: LayoutWorkflowState) -> str:
-    if state.decision is None:
-        return LayoutDecision.ACCEPT.value
-    return state.decision.value

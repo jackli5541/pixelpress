@@ -3,10 +3,11 @@ from langgraph.graph import END, START, StateGraph
 from pixelpress_backend.core.enums import LayoutDecision
 from pixelpress_backend.graph.book_scoring_node import book_scoring_node
 from pixelpress_backend.graph.chapter_clustering_node import chapter_clustering_node
+from pixelpress_backend.graph.finalize_node import finalize_node
 from pixelpress_backend.graph.layout_generation_node import layout_generation_node
-from pixelpress_backend.graph.nodes import finalize_node, score_router
 from pixelpress_backend.graph.pagination_planning_node import pagination_planning_node
 from pixelpress_backend.graph.photo_cleaning_node import photo_cleaning_node
+from pixelpress_backend.graph.routing import score_router
 from pixelpress_backend.models.workflow_state import LayoutWorkflowState
 
 
