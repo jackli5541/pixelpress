@@ -5,9 +5,9 @@ from app.common.enums import AlbumStatus, TaskStatus
 from app.common.responses import success_response
 from app.engines.layout_engine.service import (
     plan_pages,
-    generate_full_html,
     generate_layout_html,
     LAYOUT_TEMPLATES,
+    CSS_STYLES,
 )
 from app.storage.memory_store import memory_store
 
@@ -51,20 +51,53 @@ def plan_pages_endpoint(album_id: str) -> dict:
             memory_store.update_album(album_id, {"status": AlbumStatus.PLANNED})
             return success_response({"task": task, "pages": []}, "page planning complete (no photos)")
 
-        pages_plan = plan_pages(keep_photos, photos_per_page=3)
-        memory_store.pages[album_id] = {}
+        photos_by_id = {p["id"]: p for p in keep_photos}
+        chapters = memory_store.list_chapters(album_id)
 
-        created = []
-        for pp in pages_plan:
-            page = memory_store.create_page(album_id, {
-                "chapter_id": None,
-                "page_number": pp["page_number"],
-                "template": pp["template"]["template"],
-                "photo_ids": pp["photo_ids"],
-                "photo_count": pp["photo_count"],
-                "html": "",
-            })
-            created.append(page)
+        # 清空旧页面，准备按章节重新规划
+        memory_store.pages[album_id] = {}
+        created: list[dict] = []
+        global_page_no = 0
+        assigned_ids: set[str] = set()
+
+        # ── 对每个章节独立分页 ──
+        for chapter in chapters:
+            chapter_photo_ids = chapter.get("photo_ids", [])
+            chapter_photos = [photos_by_id[pid] for pid in chapter_photo_ids if pid in photos_by_id]
+            if not chapter_photos:
+                continue
+
+            chapter_pages = plan_pages(chapter_photos, photos_per_page=3)
+            for pp in chapter_pages:
+                global_page_no += 1
+                for pid in pp["photo_ids"]:
+                    assigned_ids.add(pid)
+
+                page = memory_store.create_page(album_id, {
+                    "chapter_id": chapter["id"],
+                    "page_number": global_page_no,
+                    "template": pp["template"]["template"],
+                    "photo_ids": pp["photo_ids"],
+                    "photo_count": pp["photo_count"],
+                    "html": "",
+                })
+                created.append(page)
+
+        # ── 孤立照片（不在任何章节中）也规划页面 ──
+        orphan_photos = [p for p in keep_photos if p["id"] not in assigned_ids]
+        if orphan_photos:
+            orphan_pages = plan_pages(orphan_photos, photos_per_page=3)
+            for pp in orphan_pages:
+                global_page_no += 1
+                page = memory_store.create_page(album_id, {
+                    "chapter_id": None,
+                    "page_number": global_page_no,
+                    "template": pp["template"]["template"],
+                    "photo_ids": pp["photo_ids"],
+                    "photo_count": pp["photo_count"],
+                    "html": "",
+                })
+                created.append(page)
 
         memory_store.update_album(album_id, {"status": AlbumStatus.PLANNED})
         memory_store.update_task(task["id"], {"task_status": TaskStatus.SUCCEEDED})
@@ -173,26 +206,66 @@ def render_layout(album_id: str) -> dict:
             memory_store.update_album(album_id, {"status": AlbumStatus.RENDERED})
             return success_response({"task": task, "html": ""}, "render complete (no pages)")
 
-        photos_by_id = {photo["id"]: photo for photo in memory_store.list_photos(album_id)}
+        photos_by_id: dict[str, dict] = {photo["id"]: photo for photo in memory_store.list_photos(album_id)}
+        chapters_by_id: dict[str, dict] = {ch["id"]: ch for ch in memory_store.list_chapters(album_id)}
 
-        pages_plan = []
-        for page in sorted(pages, key=lambda p: p.get("page_number", 0)):
-            pages_plan.append({
-                "page_number": page["page_number"],
-                "photo_ids": page["photo_ids"],
-                "template": {"template": page.get("template", "grid_3")},
-            })
+        # ── 按章节分组页面，生成带章节标题的全册 HTML ──
+        sorted_pages = sorted(pages, key=lambda p: p.get("page_number", 0))
 
-        full_html = generate_full_html(pages_plan, photos_by_id, album_name=album.get("name", "相册"))
+        # 将页面按 chapter_id 分组
+        chapter_pages_map: dict[str | None, list[dict]] = {}
+        for page in sorted_pages:
+            cid = page.get("chapter_id")
+            chapter_pages_map.setdefault(cid, []).append(page)
 
-        for page in pages:
-            page_photos = [photos_by_id[pid] for pid in page["photo_ids"] if pid in photos_by_id]
-            if not page_photos:
-                continue
-            tmpl = LAYOUT_TEMPLATES.get(page.get("template", "grid_3"), LAYOUT_TEMPLATES["grid_3"])
-            template_info = {"template": page.get("template", "grid_3"), "css_class": tmpl["css_class"], "slots": tmpl["slots"]}
-            single_html = generate_layout_html(template_info, page_photos, page["page_number"])
-            memory_store.update_page(album_id, page["id"], {"html": single_html, "status": "rendered"})
+        chapter_css = """
+.chapter-header {
+  width: 100%; height: 297mm; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; page-break-after: always;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+}
+.chapter-header h2 { font-size: 28pt; color: #0f172a; margin: 0; }
+.chapter-header .chapter-desc { font-size: 12pt; color: #64748b; margin-top: 8mm; }
+.chapter-header .photo-count { font-size: 10pt; color: #94a3b8; margin-top: 4mm; }
+"""
+
+        pages_html_parts: list[str] = []
+
+        # 先处理有章节归属的页面
+        for cid, ch_pages in sorted(chapter_pages_map.items(), key=lambda x: x[1][0].get("page_number", 0) if x[1] else 0):
+            if cid and cid in chapters_by_id:
+                chapter = chapters_by_id[cid]
+                ch_name = chapter.get("name", "")
+                ch_desc = chapter.get("description", "")
+                ch_count = len(chapter.get("photo_ids", []))
+                pages_html_parts.append(
+                    f'<div class="chapter-header"><h2>{ch_name}</h2>'
+                    f'<p class="chapter-desc">{ch_desc}</p>'
+                    f'<p class="photo-count">{ch_count} 张照片 · {len(ch_pages)} 页</p></div>'
+                )
+
+            for page in ch_pages:
+                page_photos = [photos_by_id[pid] for pid in page["photo_ids"] if pid in photos_by_id]
+                if page_photos:
+                    tmpl = LAYOUT_TEMPLATES.get(page.get("template", "grid_3"), LAYOUT_TEMPLATES["grid_3"])
+                    template_info = {"template": page.get("template", "grid_3"), "css_class": tmpl["css_class"], "slots": tmpl["slots"]}
+                    single_html = generate_layout_html(template_info, page_photos, page["page_number"])
+                else:
+                    single_html = f'<div class="page"><div class="page-number">{page["page_number"]}</div></div>'
+                pages_html_parts.append(single_html)
+                memory_store.update_page(album_id, page["id"], {"html": single_html, "status": "rendered"})
+
+        full_html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>{album.get("name", "相册")}</title>
+<style>{chapter_css}{CSS_STYLES}</style>
+</head>
+<body>
+{"".join(pages_html_parts)}
+</body>
+</html>"""
 
         memory_store.update_album(album_id, {"status": AlbumStatus.RENDERED, "full_html": full_html})
         memory_store.update_task(task["id"], {"task_status": TaskStatus.SUCCEEDED})

@@ -4,10 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import SectionCard from '@/shared/components/SectionCard.vue'
 import WorkflowStepper from '@/shared/components/WorkflowStepper.vue'
 import { httpGet, httpPost } from '@/shared/api/http'
+import { usePhotoDrag } from '@/shared/composables/usePhotoDrag'
 
 interface PhotoItem { id: string; filename: string; size: number; url: string }
 interface ChapterItem { id: string; name: string; description: string; order: number; photo_ids: string[] }
 
+const ORPHAN_ID = '__orphan__'
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api/v1'
 const route = useRoute(); const router = useRouter()
 const chapters = ref<ChapterItem[]>([]); const allPhotos = ref<PhotoItem[]>([])
@@ -46,9 +48,28 @@ async function renameChapter(ch: ChapterItem) { try { await fetch(`${API_BASE}/a
 
 async function deleteChapter(id: string) { if (!confirm('删除此章节？照片将变为未分配。')) return; try { await fetch(`${API_BASE}/albums/${albumId.value}/chapters/${id}`, { method: 'DELETE' }); await loadData() } catch (e: any) { errorMessage.value = e.message } }
 
-async function movePhoto(photoId: string, targetChapterId: string) { try { await fetch(`${API_BASE}/albums/${albumId.value}/chapters/move-photos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photo_ids: [photoId], target_chapter_id: targetChapterId }) }); await loadData() } catch (e: any) { errorMessage.value = e.message } }
+async function movePhoto(photoId: string, targetChapterId: string) {
+  if (targetChapterId === ORPHAN_ID) {
+    errorMessage.value = '移回未分配区域暂不支持，请删除对应章节来释放照片。'
+    return
+  }
+  try {
+    await fetch(`${API_BASE}/albums/${albumId.value}/chapters/move-photos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo_ids: [photoId], target_chapter_id: targetChapterId })
+    })
+    await loadData()
+  } catch (e: any) { errorMessage.value = e.message }
+}
 
 function goNext() { router.push(`/albums/${albumId.value}/planning`) }
+
+const { isDragging, dragPhotoId, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, getDragPhotoClass, getDropTargetClass } = usePhotoDrag({
+  onPhotoMove: movePhoto,
+  orphanAreaId: ORPHAN_ID,
+})
+
 onMounted(loadData); watch(() => albumId.value, loadData)
 </script>
 
@@ -74,10 +95,16 @@ onMounted(loadData); watch(() => albumId.value, loadData)
           @click="goNext">下一步：页面排版 &rarr;</button>
       </div>
       <p class="mt-2 text-xs text-slate-400">{{ allPhotos.length }} 张保留照片，{{ chapters.length }} 个章节，{{ getOrphans().length }} 张未分配</p>
+      <p v-if="isDragging" class="mt-1 text-xs text-cyan-600 animate-pulse">拖拽照片到目标章节即可移动</p>
     </SectionCard>
 
     <div v-if="chapters.length > 0" class="space-y-3">
-      <div v-for="chapter in chapters" :key="chapter.id" class="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div v-for="chapter in chapters" :key="chapter.id"
+        class="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm"
+        :class="getDropTargetClass(chapter.id)"
+        @dragover.prevent="(e: DragEvent) => onDragOver(e, chapter.id)"
+        @dragleave="() => onDragLeave(chapter.id)"
+        @drop="(e: DragEvent) => onDrop(e, chapter.id)">
         <div class="flex items-center justify-between px-4 py-3 bg-slate-50 cursor-pointer" @click="expandedChapter = expandedChapter === chapter.id ? null : chapter.id">
           <div class="flex items-center gap-3">
             <span class="text-xs text-slate-400">{{ expandedChapter === chapter.id ? 'v' : '>' }}</span>
@@ -90,15 +117,16 @@ onMounted(loadData); watch(() => albumId.value, loadData)
           </div>
         </div>
         <div v-if="expandedChapter === chapter.id" class="border-t border-slate-100 px-4 py-3">
-          <div v-if="getPhotos(chapter.photo_ids || []).length === 0" class="py-8 text-center text-sm text-slate-400">暂无照片，从下方未分配区域移动照片过来</div>
+          <div v-if="getPhotos(chapter.photo_ids || []).length === 0" class="py-8 text-center text-sm text-slate-400">暂无照片，拖入照片到此章节</div>
           <div v-else class="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            <div v-for="photo in getPhotos(chapter.photo_ids || [])" :key="photo.id" class="group relative rounded-xl border border-slate-200 overflow-hidden">
-              <img :src="photo.url" :alt="photo.filename" class="h-20 w-full object-cover" />
+            <div v-for="photo in getPhotos(chapter.photo_ids || [])" :key="photo.id"
+              class="group relative rounded-xl border border-slate-200 overflow-hidden select-none"
+              :class="getDragPhotoClass(photo.id)"
+              draggable="true"
+              @dragstart="(e: DragEvent) => onDragStart(e, photo.id, chapter.id)"
+              @dragend="onDragEnd">
+              <img :src="photo.url" :alt="photo.filename" class="h-20 w-full object-cover pointer-events-none" />
               <p class="truncate px-2 py-1 text-xs text-slate-600">{{ photo.filename }}</p>
-              <select class="absolute top-1 right-1 rounded border border-slate-300 bg-white/90 text-xs opacity-0 group-hover:opacity-100 transition" @change="(e: Event) => movePhoto(photo.id, (e.target as HTMLSelectElement).value)">
-                <option value="">移动到...</option>
-                <option v-for="ch in chapters.filter(c => c.id !== chapter.id)" :key="ch.id" :value="ch.id">{{ ch.name }}</option>
-              </select>
             </div>
           </div>
         </div>
@@ -106,12 +134,19 @@ onMounted(loadData); watch(() => albumId.value, loadData)
     </div>
 
     <SectionCard v-if="getOrphans().length > 0" title="未分配照片" :description="`${getOrphans().length} 张未归属任何章节`">
-      <div class="grid gap-2 sm:grid-cols-4 lg:grid-cols-6">
-        <div v-for="photo in getOrphans()" :key="photo.id" class="rounded-xl border border-dashed border-slate-300 bg-slate-50 overflow-hidden">
-          <img :src="photo.url" :alt="photo.filename" class="h-16 w-full object-cover" />
-          <div class="px-2 py-1.5"><p class="truncate text-[10px] text-slate-600">{{ photo.filename }}</p>
-            <select v-if="chapters.length > 0" class="mt-1 w-full rounded border border-slate-200 text-xs" @change="(e: Event) => movePhoto(photo.id, (e.target as HTMLSelectElement).value)"><option value="">分配到...</option><option v-for="ch in chapters" :key="ch.id" :value="ch.id">{{ ch.name }}</option></select>
-          </div>
+      <div class="grid gap-2 sm:grid-cols-4 lg:grid-cols-6"
+        :class="getDropTargetClass(ORPHAN_ID)"
+        @dragover.prevent="(e: DragEvent) => onDragOver(e, ORPHAN_ID)"
+        @dragleave="() => onDragLeave(ORPHAN_ID)"
+        @drop="(e: DragEvent) => onDrop(e, ORPHAN_ID)">
+        <div v-for="photo in getOrphans()" :key="photo.id"
+          class="rounded-xl border border-dashed border-slate-300 bg-slate-50 overflow-hidden select-none"
+          :class="getDragPhotoClass(photo.id)"
+          draggable="true"
+          @dragstart="(e: DragEvent) => onDragStart(e, photo.id, ORPHAN_ID)"
+          @dragend="onDragEnd">
+          <img :src="photo.url" :alt="photo.filename" class="h-16 w-full object-cover pointer-events-none" />
+          <div class="px-2 py-1.5"><p class="truncate text-[10px] text-slate-600">{{ photo.filename }}</p></div>
         </div>
       </div>
     </SectionCard>

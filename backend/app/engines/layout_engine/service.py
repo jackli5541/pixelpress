@@ -243,7 +243,7 @@ def adjust_layout(
 ) -> dict[str, Any]:
     """根据用户自然语言指令调整版式（当前为简单规则匹配）。
 
-    后续可接入 Claude API 做语义理解。
+    后续可接入 DeepSeek V4 Pro 做语义理解。
     """
     instruction_lower = instruction.lower()
 

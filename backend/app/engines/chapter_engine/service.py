@@ -119,7 +119,7 @@ def cluster_photos(
 def suggest_chapter_name(photos: list[dict[str, Any]], index: int = 1) -> str:
     """基于照片时间范围和数量建议章节名称。
 
-    当前为规则式（无需 AI），后续可接入 Claude API 做语义命名。
+    当前为规则式（无需 AI），后续可接入 DeepSeek V4 Pro 做语义命名。
     """
     time_label = _time_range_label(photos)
     if time_label and time_label != "未知时间":

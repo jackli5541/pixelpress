@@ -18,7 +18,7 @@ LOW_RES_THRESHOLD = 800                 # 低于此值视为低分辨率
 def analyze_photo_quality(photo_meta: dict[str, Any]) -> dict[str, Any]:
     """分析单张照片的质量并返回评分与标签。
 
-    当前使用基于规则的评估（无需 AI），后续可接入 Claude API 增强。
+    当前使用基于规则的评估（无需 AI），后续可接入 DeepSeek V4 Pro 增强。
 
     Returns:
         dict: quality_score（0-10）、tags、recommendation、issues。
