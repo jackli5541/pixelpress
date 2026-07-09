@@ -47,9 +47,11 @@ Thumbs.db
 frontend/.pytest_cache/
 .tmp*/
 tmp_*/
+tmp_*.bat
 backend/tmp_*.py
 
 # ==================== Local verification assets ====================
+实施计划/
 测试例子/
 测试例子2/
 测试例子.zip
