@@ -1,0 +1,17 @@
+.git
+.gitignore
+.claude
+.tmp_live_ai
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.idea
+**/.vscode
+**/node_modules
+**/.venv
+**/dist
+**/coverage
+backend/uploads
+backend/.env
+frontend/.env

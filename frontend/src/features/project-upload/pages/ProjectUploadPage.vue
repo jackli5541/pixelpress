@@ -1,127 +1,209 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SectionCard from '@/shared/components/SectionCard.vue'
+import StoryHero from '@/shared/components/StoryHero.vue'
 import WorkflowStepper from '@/shared/components/WorkflowStepper.vue'
-import { httpGet, httpPost } from '@/shared/api/http'
-import type { AlbumCard } from '@/shared/types/album'
-
-interface UploadedPhotoItem {
-  id: string; album_id: string; filename: string; content_type: string
-  size: number; storage_key: string; url: string; uploaded_at: string
-}
+import ProtectedImage from '@/shared/components/ProtectedImage.vue'
+import AlbumShowcaseBackdrop from '@/shared/components/AlbumShowcaseBackdrop.vue'
+import CurrentAlbumCard from '@/features/project-upload/components/CurrentAlbumCard.vue'
+import ProjectBindingCard from '@/features/project-upload/components/ProjectBindingCard.vue'
+import CreateAlbumCard from '@/features/project-upload/components/CreateAlbumCard.vue'
+import RecentAlbumsList from '@/features/project-upload/components/RecentAlbumsList.vue'
+import DeleteProjectDialog from '@/features/project-upload/components/DeleteProjectDialog.vue'
+import { useProjectUploadPageState } from '@/features/project-upload/composables/useProjectUploadPageState'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api/v1'
-const route = useRoute(); const router = useRouter()
 
-const form = reactive({ name: '', album_type: 'yearbook', book_size: 'square_10inch', theme_style: 'minimal', cover_title: '' })
-const albums = ref<AlbumCard[]>([])
-const currentAlbum = ref<AlbumCard | null>(null)
-const photos = ref<UploadedPhotoItem[]>([])
-const loading = ref(false); const submitting = ref(false); const uploading = ref(false)
-const errorMessage = ref(''); const successMessage = ref('')
-const uploadProgress = ref(0); const uploadTotal = ref(0)
-const fileInput = ref<HTMLInputElement | null>(null)
+const route = useRoute()
+const router = useRouter()
+const currentAlbumId = computed(() => {
+  const id = route.params.id
+  return typeof id === 'string' ? id : ''
+})
 
-const currentAlbumId = computed(() => { const id = route.params.id; return typeof id === 'string' ? id : '' })
-
-function formatFileSize(bytes: number): string { if (bytes < 1024) return `${bytes} B`; if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`; return `${(bytes / (1024 * 1024)).toFixed(1)} MB` }
-
-async function loadAlbums() { loading.value = true; errorMessage.value = ''; try { const r = await httpGet<AlbumCard[]>('/albums'); albums.value = r.data } catch (e: any) { errorMessage.value = e.message } finally { loading.value = false } }
-async function loadCurrentAlbum() { if (!currentAlbumId.value) { currentAlbum.value = null; return }; try { const r = await httpGet<AlbumCard>(`/albums/${currentAlbumId.value}`); currentAlbum.value = r.data } catch { currentAlbum.value = null } }
-async function loadPhotos() { if (!currentAlbumId.value) return; try { const r = await httpGet<{ items: UploadedPhotoItem[] }>(`/albums/${currentAlbumId.value}/photos`); photos.value = r.data.items } catch { photos.value = [] } }
-
-async function submitAlbum() {
-  if (!form.name.trim()) { errorMessage.value = '请填写项目名称'; return }
-  submitting.value = true; errorMessage.value = ''
-  try { const r = await httpPost<AlbumCard>('/albums', { ...form, cover_title: form.cover_title || null }); await loadAlbums(); await router.push(`/albums/${r.data.id}/upload`) } catch (e: any) { errorMessage.value = e.message } finally { submitting.value = false }
-}
-
-function triggerFileSelect() { fileInput.value?.click() }
-
-async function handleFilesSelected(event: Event) {
-  const input = event.target as HTMLInputElement; const files = input.files; if (!files || !files.length) return
-  if (!currentAlbumId.value) { errorMessage.value = '请先选择项目'; input.value = ''; return }
-  uploading.value = true; errorMessage.value = ''; uploadTotal.value = files.length; uploadProgress.value = 0
-  const fd = new FormData(); for (let i = 0; i < files.length; i++) fd.append('files', files[i])
-  try {
-    const res = await fetch(`${API_BASE}/albums/${currentAlbumId.value}/photos/upload`, { method: 'POST', body: fd })
-    if (!res.ok) throw new Error(`上传失败 (${res.status})`)
-    const result = await res.json(); uploadProgress.value = uploadTotal.value
-    if (result.data?.rejected?.length) errorMessage.value = '部分文件被拒绝: ' + result.data.rejected.map((r: any) => r.filename).join(', ')
-    await loadPhotos(); await loadCurrentAlbum()
-    successMessage.value = `成功上传 ${result.data?.uploaded?.length || 0} 张照片`; setTimeout(() => successMessage.value = '', 3000)
-  } catch (e: any) { errorMessage.value = e.message } finally { uploading.value = false; input.value = '' }
-}
-
-function goToCleaning() { if (currentAlbumId.value) router.push(`/albums/${currentAlbumId.value}/cleaning`) }
-
-onMounted(async () => { await loadAlbums(); await loadCurrentAlbum(); if (currentAlbumId.value) await loadPhotos() })
-watch(() => currentAlbumId.value, async () => { await loadAlbums(); await loadCurrentAlbum(); photos.value = []; if (currentAlbumId.value) await loadPhotos() })
+const {
+  form,
+  albums,
+  projects,
+  currentAlbum,
+  photos,
+  loading,
+  projectsLoading,
+  submitting,
+  uploading,
+  deletingProjectId,
+  deletingAlbumIds,
+  deletingPhotoIds,
+  showDeleteProjectDialog,
+  projectPendingDelete,
+  deleteProjectError,
+  errorMessage,
+  successMessage,
+  uploadProgress,
+  uploadTotal,
+  fileInput,
+  isAuthenticated,
+  currentProject,
+  formatFileSize,
+  submitAlbum,
+  triggerFileSelect,
+  goToAlbumResume,
+  openDeleteProjectDialog,
+  closeDeleteProjectDialog,
+  confirmDeleteProject,
+  deleteAlbum,
+  handleFilesSelected,
+  deletePhoto,
+  goToCleaning,
+} = useProjectUploadPageState({
+  albumId: currentAlbumId,
+  router,
+  apiBase: API_BASE,
+})
 </script>
 
 <template>
-  <WorkflowStepper v-if="currentAlbumId" :album-id="currentAlbumId" />
+  <WorkflowStepper v-if="currentAlbumId" :album-id="currentAlbumId" :album-status="currentAlbum?.status" />
 
   <div class="space-y-6">
-    <SectionCard title="上传照片" :description="currentAlbum ? `正在向「${currentAlbum.name}」添加照片` : '请先选择或创建项目'"
-      eyebrow="步骤 1" tone="accent">
-      <input ref="fileInput" type="file" accept="image/*" multiple class="hidden" @change="handleFilesSelected" />
-
-      <div v-if="currentAlbum" class="grid gap-3 md:grid-cols-4 mb-4">
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><p class="text-xs text-slate-500">项目</p><p class="mt-1 font-semibold text-slate-900">{{ currentAlbum.name }}</p></div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><p class="text-xs text-slate-500">规格</p><p class="mt-1 font-semibold text-slate-900">{{ currentAlbum.book_size }}</p></div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><p class="text-xs text-slate-500">照片数</p><p class="mt-1 font-semibold text-slate-900">{{ photos.length }} 张</p></div>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><p class="text-xs text-slate-500">状态</p><p class="mt-1 font-semibold text-slate-900">{{ currentAlbum.status }}</p></div>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-3">
-        <button class="rounded-full bg-cyan-600 px-6 py-3 text-sm text-white hover:bg-cyan-700 disabled:bg-slate-400"
-          :disabled="!currentAlbumId || uploading" @click="triggerFileSelect">
-          {{ uploading ? '上传中...' : '选择照片上传' }}
-        </button>
-        <span v-if="successMessage" class="text-sm text-emerald-600">{{ successMessage }}</span>
-        <span v-if="errorMessage" class="text-sm text-rose-600">{{ errorMessage }}</span>
-        <button v-if="currentAlbumId && photos.length > 0"
-          class="ml-auto rounded-full border border-cyan-300 bg-cyan-50 px-6 py-3 text-sm text-cyan-700 hover:bg-cyan-100 shadow-sm"
-          @click="goToCleaning">下一步：照片清洗 &rarr;</button>
-      </div>
-
-      <div v-if="uploading" class="mt-4">
-        <div class="h-2 w-full rounded-full bg-slate-200"><div class="h-2 rounded-full bg-cyan-600 transition-all duration-300" :style="{ width: uploadTotal ? `${(uploadProgress / uploadTotal) * 100}%` : '0%' }" /></div>
-        <p class="mt-1 text-xs text-slate-500">{{ uploadProgress }} / {{ uploadTotal }}</p>
-      </div>
-    </SectionCard>
-
-    <SectionCard v-if="photos.length > 0" title="已上传照片" :description="`共 ${photos.length} 张`">
-      <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        <div v-for="photo in photos" :key="photo.id" class="group rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition">
-          <div class="aspect-square bg-slate-100"><img :src="photo.url" :alt="photo.filename" class="h-full w-full object-cover" loading="lazy" /></div>
-          <div class="px-2 py-2"><p class="truncate text-xs font-medium text-slate-700">{{ photo.filename }}</p><p class="text-[10px] text-slate-400">{{ formatFileSize(photo.size) }}</p></div>
-        </div>
-      </div>
-    </SectionCard>
-
-    <SectionCard title="项目列表" description="选择已有项目或创建新项目">
-      <div class="grid gap-4 lg:grid-cols-2">
-        <div class="rounded-2xl border border-slate-200 p-4">
-          <p class="text-sm font-semibold text-slate-900 mb-3">创建新项目</p>
-          <div class="space-y-3">
-            <input v-model="form.name" type="text" placeholder="项目名称，如：2025 年度相册" class="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-cyan-400" />
-            <button class="w-full rounded-xl bg-cyan-600 px-4 py-2.5 text-sm text-white hover:bg-cyan-700 disabled:bg-slate-400" :disabled="submitting" @click="submitAlbum">{{ submitting ? '创建中...' : '创建并开始' }}</button>
+    <div class="relative overflow-hidden rounded-[32px]">
+      <AlbumShowcaseBackdrop mode="hero" />
+      <StoryHero
+        eyebrow="Story Project"
+        title="把散落的照片整理成一本有节奏的故事书"
+        description="先选择项目，再创建相册并上传素材。每一步都围绕成册体验设计，而不是普通图库操作。"
+      >
+        <div class="grid gap-4 md:grid-cols-3">
+          <div class="story-panel rounded-[24px] px-4 py-4">
+            <p class="text-xs uppercase tracking-[0.24em] text-[var(--story-faint)]">Step 01</p>
+            <p class="mt-2 font-story text-3xl text-[var(--story-gold-soft)]">Project</p>
+            <p class="mt-2 text-sm text-[var(--story-muted)]">为故事书选择明确归属的项目。</p>
+          </div>
+          <div class="story-panel rounded-[24px] px-4 py-4">
+            <p class="text-xs uppercase tracking-[0.24em] text-[var(--story-faint)]">Step 02</p>
+            <p class="mt-2 font-story text-3xl text-[var(--story-gold-soft)]">Album</p>
+            <p class="mt-2 text-sm text-[var(--story-muted)]">为这一册命名，定义作品主题。</p>
+          </div>
+          <div class="story-panel rounded-[24px] px-4 py-4">
+            <p class="text-xs uppercase tracking-[0.24em] text-[var(--story-faint)]">Step 03</p>
+            <p class="mt-2 font-story text-3xl text-[var(--story-gold-soft)]">Frames</p>
+            <p class="mt-2 text-sm text-[var(--story-muted)]">上传镜头素材，开始成章成册。</p>
           </div>
         </div>
-        <div>
-          <div v-if="loading" class="text-sm text-slate-500 py-4">加载中...</div>
-          <div v-else-if="albums.length === 0" class="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-400">暂无项目</div>
-          <div v-else class="space-y-2 max-h-[320px] overflow-auto">
-            <button v-for="album in albums" :key="album.id" class="flex w-full items-center justify-between rounded-xl border border-slate-200 px-4 py-3 text-left hover:border-cyan-300 hover:bg-cyan-50/50 transition" @click="router.push(`/albums/${album.id}/upload`)">
-              <div><p class="text-sm font-medium text-slate-900">{{ album.name }}</p><p class="text-xs text-slate-500 mt-0.5">{{ album.photo_count }} 张照片 · {{ album.status }}</p></div>
-              <span class="text-xs text-cyan-600">进入 &rarr;</span>
-            </button>
+      </StoryHero>
+    </div>
+
+    <div v-if="currentAlbum" class="relative overflow-hidden rounded-[28px]">
+      <AlbumShowcaseBackdrop mode="editorial" />
+      <SectionCard
+        title="当前作品"
+        :description="`正在为《${currentAlbum.name}》收集素材。上传完成后即可进入镜头筛选。`"
+        tone="film"
+        eyebrow="Current Album"
+      >
+        <input ref="fileInput" type="file" accept="image/*,.heic" multiple class="hidden" @change="handleFilesSelected" />
+
+        <div class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <CurrentAlbumCard
+            :album="currentAlbum"
+            :photos-count="photos.length"
+            :uploading="uploading"
+            :upload-progress="uploadProgress"
+            :upload-total="uploadTotal"
+            :deleting="currentAlbum ? deletingAlbumIds.includes(currentAlbum.id) : false"
+            @upload-click="triggerFileSelect"
+            @go-cleaning="goToCleaning"
+            @delete-album="currentAlbum && deleteAlbum(currentAlbum)"
+          />
+
+          <ProjectBindingCard
+            :project="currentProject"
+            @delete-project="openDeleteProjectDialog"
+          />
+        </div>
+
+        <div v-if="successMessage || errorMessage" class="mt-4 flex flex-col gap-3">
+          <p v-if="successMessage" class="rounded-[18px] bg-[#dcead5] px-4 py-3 text-sm text-[#47673d]">{{ successMessage }}</p>
+          <p v-if="errorMessage" class="rounded-[18px] bg-[#f6d9d3] px-4 py-3 text-sm text-[#8b4339]">{{ errorMessage }}</p>
+        </div>
+      </SectionCard>
+    </div>
+
+    <SectionCard
+      v-if="photos.length > 0"
+      title="素材接触表"
+      :description="`已收录 ${photos.length} 张照片。这里保持作品打样感，而不是普通文件列表。`"
+      tone="film"
+      eyebrow="Contact Sheet"
+    >
+      <div class="contact-sheet rounded-[24px] border border-[rgba(224,177,106,0.16)] p-4">
+        <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div v-for="photo in photos" :key="photo.id" class="film-frame overflow-hidden rounded-[22px] bg-[rgba(255,255,255,0.04)]">
+            <ProtectedImage :src="photo.url" :alt="photo.filename" class="h-44 w-full object-cover" />
+            <div class="px-3 py-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-[var(--story-text)]">{{ photo.filename }}</p>
+                  <p class="mt-1 text-xs text-[var(--story-muted)]">{{ formatFileSize(photo.size) }}</p>
+                </div>
+                <button
+                  class="rounded-full bg-[#f2d8d2] px-3 py-1.5 text-xs text-[#8b4339] transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="deletingPhotoIds.includes(photo.id)"
+                  @click="deletePhoto(photo)"
+                >
+                  {{ deletingPhotoIds.includes(photo.id) ? '删除中...' : '删除' }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </SectionCard>
+
+    <div class="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]">
+      <SectionCard
+        title="开始一本新故事书"
+        description="明确项目归属后，再为相册命名并进入素材上传。这里刻意保持流程感，而不是堆很多字段。"
+        tone="accent"
+        eyebrow="Create Album"
+      >
+        <CreateAlbumCard
+          :name="form.name"
+          :project-id="form.project_id"
+          :projects="projects"
+          :projects-loading="projectsLoading"
+          :submitting="submitting"
+          :is-authenticated="isAuthenticated"
+          @update:name="form.name = $event"
+          @update:projectId="form.project_id = $event"
+          @submit="submitAlbum"
+        />
+      </SectionCard>
+
+      <SectionCard
+        title="最近创作"
+        description="继续此前的相册，直接回到素材收集或后续编排阶段。"
+        tone="film"
+        eyebrow="Recent Albums"
+      >
+        <RecentAlbumsList
+          :albums="albums"
+          :loading="loading"
+          :is-authenticated="isAuthenticated"
+          :deleting-album-ids="deletingAlbumIds"
+          @resume="goToAlbumResume"
+          @delete-album="deleteAlbum"
+        />
+      </SectionCard>
+    </div>
+    <DeleteProjectDialog
+      :visible="showDeleteProjectDialog"
+      :project="projectPendingDelete"
+      :error-message="deleteProjectError"
+      :loading="deletingProjectId === projectPendingDelete?.id"
+      @close="closeDeleteProjectDialog"
+      @confirm="confirmDeleteProject"
+    />
   </div>
 </template>

@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+STYLE_PRESETS: dict[str, dict[str, Any]] = {
+    "minimal": {
+        "label": "Minimal",
+        "heading_font": "'Georgia', serif",
+        "body_font": "'Noto Sans SC', 'Microsoft YaHei', sans-serif",
+        "display_font": "'Georgia', serif",
+        "primary_color": "#111827",
+        "secondary_color": "#6b7280",
+        "accent_color": "#c08457",
+        "background": "#fffdf8",
+        "panel_background": "rgba(255, 255, 255, 0.72)",
+        "border_color": "rgba(17, 24, 39, 0.12)",
+        "caption_background": "rgba(255, 253, 248, 0.88)",
+        "ornament_gradient": "linear-gradient(135deg, rgba(192,132,87,0.22), rgba(17,24,39,0.08))",
+        "cover_gradient": "linear-gradient(145deg, #f7f1e8 0%, #fffdf8 52%, #efe5d6 100%)",
+        "chapter_gradient": "linear-gradient(145deg, #fbf7f1 0%, #fffdf8 100%)",
+        "copy_alignment": "left",
+    },
+    "editorial": {
+        "label": "Editorial",
+        "heading_font": "'Times New Roman', serif",
+        "body_font": "'Arial', sans-serif",
+        "display_font": "'Baskerville Old Face', 'Times New Roman', serif",
+        "primary_color": "#0f172a",
+        "secondary_color": "#475569",
+        "accent_color": "#b91c1c",
+        "background": "#fffaf7",
+        "panel_background": "rgba(255, 250, 247, 0.82)",
+        "border_color": "rgba(15, 23, 42, 0.14)",
+        "caption_background": "rgba(255, 250, 247, 0.92)",
+        "ornament_gradient": "linear-gradient(135deg, rgba(185,28,28,0.18), rgba(15,23,42,0.12))",
+        "cover_gradient": "linear-gradient(140deg, #fbf0ea 0%, #fffaf7 55%, #ecd7cf 100%)",
+        "chapter_gradient": "linear-gradient(140deg, #fff6f2 0%, #fffaf7 100%)",
+        "copy_alignment": "left",
+    },
+    "warm_family": {
+        "label": "Warm Family",
+        "heading_font": "'Trebuchet MS', 'Microsoft YaHei', sans-serif",
+        "body_font": "'Microsoft YaHei', sans-serif",
+        "display_font": "'Trebuchet MS', 'Microsoft YaHei', sans-serif",
+        "primary_color": "#5b342d",
+        "secondary_color": "#8b5e55",
+        "accent_color": "#d97706",
+        "background": "#fff7ed",
+        "panel_background": "rgba(255, 248, 237, 0.82)",
+        "border_color": "rgba(91, 52, 45, 0.12)",
+        "caption_background": "rgba(255, 247, 237, 0.93)",
+        "ornament_gradient": "linear-gradient(135deg, rgba(217,119,6,0.22), rgba(91,52,45,0.1))",
+        "cover_gradient": "linear-gradient(145deg, #fff0dd 0%, #fff7ed 48%, #f1dfcf 100%)",
+        "chapter_gradient": "linear-gradient(145deg, #fff3e3 0%, #fff9f1 100%)",
+        "copy_alignment": "left",
+    },
+    "playful_child": {
+        "label": "Playful Child",
+        "heading_font": "'Comic Sans MS', 'Microsoft YaHei', sans-serif",
+        "body_font": "'Microsoft YaHei', sans-serif",
+        "display_font": "'Comic Sans MS', 'Microsoft YaHei', sans-serif",
+        "primary_color": "#1e3a8a",
+        "secondary_color": "#0f766e",
+        "accent_color": "#ea580c",
+        "background": "#fefce8",
+        "panel_background": "rgba(255, 252, 232, 0.86)",
+        "border_color": "rgba(30, 58, 138, 0.12)",
+        "caption_background": "rgba(254, 252, 232, 0.92)",
+        "ornament_gradient": "linear-gradient(135deg, rgba(234,88,12,0.18), rgba(15,118,110,0.14))",
+        "cover_gradient": "linear-gradient(145deg, #fff7bf 0%, #fefce8 52%, #dff7ef 100%)",
+        "chapter_gradient": "linear-gradient(145deg, #fffbd8 0%, #fefce8 100%)",
+        "copy_alignment": "center",
+    },
+}
+
+
+def build_template_catalog(layout_templates: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    catalog: list[dict[str, Any]] = []
+    for key, value in layout_templates.items():
+        slots = int(value.get("slots", 0))
+        catalog.append(
+            {
+                "template_key": key,
+                "preferred_photo_count": slots,
+                "supports_portrait_focus": key in {"full_page", "gallery_portrait", "one_large_two_small", "half_half"},
+                "supports_landscape_balance": key in {"cinema_landscape", "grid_3", "grid_4", "half_half", "two_column", "triptych_strip", "mosaic_mix"},
+                "hero_slot": 0,
+                "story_style": "hero" if key in {"full_page", "cinema_landscape", "gallery_portrait", "one_large_two_small"} else "balanced",
+                "symmetry_level": "strong" if key in {"grid_4", "two_column", "half_half", "triptych_strip"} else "mixed",
+                "description": value.get("description", ""),
+            }
+        )
+    return catalog

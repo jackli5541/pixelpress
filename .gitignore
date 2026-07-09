@@ -1,5 +1,4 @@
 # ==================== Python ====================
-# 虚拟环境
 .venv/
 venv/
 env/
@@ -7,23 +6,23 @@ env/
 *.pyo
 __pycache__/
 
-# 环境变量（包含敏感凭据）
+# Environment files
 .env
 .env.local
 .env.*.local
 
-# 运行时数据
+# Runtime data
 uploads/
 *.db
 *.sqlite
 *.sqlite3
 
-# Python 包构建产物
+# Build artifacts
 *.egg-info/
 dist/
 build/
 
-# ==================== Node / 前端 ====================
+# ==================== Node / Frontend ====================
 node_modules/
 frontend/dist/
 *.local
@@ -35,12 +34,23 @@ frontend/dist/
 *.swo
 *~
 .claude/settings.local.json
+.trae/
 
-# ==================== 系统文件 ====================
+# ==================== System files ====================
 .DS_Store
 Thumbs.db
 *.tmp
 *.log
 
-# ==================== 测试数据 ====================
+# ==================== Local temp artifacts ====================
+.pytest_cache/
+frontend/.pytest_cache/
+.tmp*/
+tmp_*/
+backend/tmp_*.py
+
+# ==================== Local verification assets ====================
 测试例子/
+测试例子2/
+测试例子.zip
+tmp_verify_auth/

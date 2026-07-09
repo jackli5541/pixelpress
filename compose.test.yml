@@ -1,0 +1,72 @@
+services:
+  postgres-test:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pixpress1_test
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pixpress1_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis-test:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.11-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        APT_MIRROR_HOST: ${APT_MIRROR_HOST:-mirrors.tuna.tsinghua.edu.cn}
+        PLAYWRIGHT_DOWNLOAD_HOST: ${PLAYWRIGHT_DOWNLOAD_HOST:-https://registry.npmmirror.com/-/binary/playwright}
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres-test:5432/pixpress1_test
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres-test:5432/pixpress1_test
+      REDIS_URL: redis://redis-test:6379/0
+      STORAGE_BACKEND: local
+      AUTH_SECRET_KEY: change-me-in-production-but-long-enough-for-tests-123456
+      SECRETS_MASTER_KEY: test-secrets-master-key-1234567890abcdef
+      RATE_LIMIT_LOGIN: 1000/minute
+      RATE_LIMIT_REGISTER: 1000/minute
+      RATE_LIMIT_UPLOAD: 1000/minute
+      RATE_LIMIT_TASK_TRIGGER: 1000/minute
+      RATE_LIMIT_EXPORT: 1000/minute
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/scripts:/app/scripts
+      - ./backend/tests:/app/tests
+      - ./backend/alembic.ini:/app/alembic.ini:ro
+      - ./backend/sitecustomize.py:/app/sitecustomize.py:ro
+      - backend_test_uploads:/app/uploads
+    command: ["pytest", "tests/integration", "-q"]
+
+volumes:
+  postgres_test_data:
+  redis_test_data:
+  backend_test_uploads:

@@ -2,155 +2,351 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SectionCard from '@/shared/components/SectionCard.vue'
+import StoryHero from '@/shared/components/StoryHero.vue'
 import WorkflowStepper from '@/shared/components/WorkflowStepper.vue'
-import { httpGet, httpPost } from '@/shared/api/http'
+import ProtectedImage from '@/shared/components/ProtectedImage.vue'
+import AlbumTaskStatusCard from '@/shared/components/AlbumTaskStatusCard.vue'
+import { httpDelete, httpGet, httpPatch, httpPost } from '@/shared/api/http'
 import { usePhotoDrag } from '@/shared/composables/usePhotoDrag'
+import { useAlbumTaskMonitor } from '@/shared/composables/useAlbumTaskMonitor'
 
-interface PhotoItem { id: string; filename: string; size: number; url: string }
-interface ChapterItem { id: string; name: string; description: string; order: number; photo_ids: string[] }
+interface PhotoItem {
+  id: string
+  filename: string
+  size: number
+  url: string
+}
+
+interface ChapterItem {
+  id: string
+  name: string
+  description: string
+  order: number
+  photo_ids: string[]
+}
 
 const ORPHAN_ID = '__orphan__'
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api/v1'
-const route = useRoute(); const router = useRouter()
-const chapters = ref<ChapterItem[]>([]); const allPhotos = ref<PhotoItem[]>([])
-const albumStatus = ref<string>('draft')
-const loading = ref(false); const actionLoading = ref(false)
-const errorMessage = ref(''); const successMessage = ref('')
-const expandedChapter = ref<string | null>(null); const editingChapter = ref<string | null>(null)
-const editName = ref(''); const newChapterName = ref('')
 
-const albumId = computed(() => { const id = route.params.id; return typeof id === 'string' ? id : '' })
-const needCleaning = computed(() => albumStatus.value === 'draft' || albumStatus.value === 'uploaded')
+const route = useRoute()
+const router = useRouter()
 
-function getPhotos(idList: string[]): PhotoItem[] { const ids = new Set(idList); return allPhotos.value.filter(p => ids.has(p.id)) }
-function getOrphans(): PhotoItem[] { const assigned = new Set<string>(); chapters.value.forEach(ch => (ch.photo_ids || []).forEach(id => assigned.add(id))); return allPhotos.value.filter(p => !assigned.has(p.id)) }
+const chapters = ref<ChapterItem[]>([])
+const allPhotos = ref<PhotoItem[]>([])
+const albumStatus = ref('draft')
+const loading = ref(false)
+const actionLoading = ref(false)
+const errorMessage = ref('')
+const successMessage = ref('')
+const expandedChapter = ref<string | null>(null)
+const editingChapter = ref<string | null>(null)
+const editName = ref('')
+const newChapterName = ref('')
+
+const albumId = computed(() => {
+  const id = route.params.id
+  return typeof id === 'string' ? id : ''
+})
+
+const needCleaning = computed(() => ['draft', 'uploaded'].includes(albumStatus.value))
+const { latestTask, refreshTask, startPolling } = useAlbumTaskMonitor({
+  albumId,
+  matches: (task) => task.task_type === 'cluster_chapters',
+})
+
+async function applyClusterTaskOutcome(task = latestTask.value) {
+  await loadData()
+  if (task?.task_status === 'succeeded') {
+    successMessage.value = '自动章节整理完成。'
+    setTimeout(() => {
+      successMessage.value = ''
+    }, 3000)
+  }
+}
+
+function getPhotos(idList: string[]) {
+  const idSet = new Set(idList)
+  return allPhotos.value.filter((photo) => idSet.has(photo.id))
+}
+
+function getOrphans() {
+  const assigned = new Set<string>()
+  chapters.value.forEach((chapter) => (chapter.photo_ids || []).forEach((id) => assigned.add(id)))
+  return allPhotos.value.filter((photo) => !assigned.has(photo.id))
+}
 
 async function loadData() {
-  if (!albumId.value) return; loading.value = true; errorMessage.value = ''
+  if (!albumId.value) return
+  loading.value = true
+  errorMessage.value = ''
   try {
-    const [chRes, phRes, albRes] = await Promise.all([
+    const [chapterResponse, photoResponse, albumResponse] = await Promise.all([
       httpGet<ChapterItem[]>(`/albums/${albumId.value}/chapters`),
       httpGet<{ items: PhotoItem[] }>(`/albums/${albumId.value}/photos?recommendation=keep`),
       httpGet<any>(`/albums/${albumId.value}`),
     ])
-    chapters.value = chRes.data || []; allPhotos.value = phRes.data.items || []
-    albumStatus.value = albRes.data?.status || 'draft'
-  } catch (e: any) { errorMessage.value = e.message } finally { loading.value = false }
+    chapters.value = chapterResponse.data || []
+    allPhotos.value = photoResponse.data.items || []
+    albumStatus.value = albumResponse.data?.status || 'draft'
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    loading.value = false
+  }
 }
 
-function goBack() { router.push(`/albums/${albumId.value}/cleaning`) }
+function goBack() {
+  void router.push(`/albums/${albumId.value}/cleaning`)
+}
 
-async function startCluster() { if (!albumId.value) return; actionLoading.value = true; try { await httpPost(`/albums/${albumId.value}/cluster`); await loadData(); successMessage.value = '聚类完成' } catch (e: any) { errorMessage.value = e.message } finally { actionLoading.value = false; setTimeout(() => successMessage.value = '', 3000) } }
+async function startCluster() {
+  if (!albumId.value) return
+  actionLoading.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const response = await httpPost<{ task: { id: string } }>(`/albums/${albumId.value}/cluster`)
+    const taskId = response.data.task.id
+    await refreshTask(taskId)
+    startPolling(taskId, async (task) => {
+      await applyClusterTaskOutcome(task)
+    })
+  } catch (error: any) {
+    errorMessage.value = error.message
+    await refreshTask()
+  } finally {
+    actionLoading.value = false
+  }
+}
 
-async function createChapter() { if (!newChapterName.value.trim()) return; try { await fetch(`${API_BASE}/albums/${albumId.value}/chapters`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newChapterName.value.trim(), photo_ids: [] }) }); newChapterName.value = ''; await loadData() } catch (e: any) { errorMessage.value = e.message } }
+async function createChapter() {
+  if (!newChapterName.value.trim()) return
+  try {
+    await httpPost(`/albums/${albumId.value}/chapters`, { name: newChapterName.value.trim(), photo_ids: [] })
+    newChapterName.value = ''
+    await loadData()
+  } catch (error: any) {
+    errorMessage.value = error.message
+  }
+}
 
-async function renameChapter(ch: ChapterItem) { try { await fetch(`${API_BASE}/albums/${albumId.value}/chapters/${ch.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: editName.value }) }); ch.name = editName.value; editingChapter.value = null } catch (e: any) { errorMessage.value = e.message } }
+async function renameChapter(chapter: ChapterItem) {
+  try {
+    await httpPatch(`/albums/${albumId.value}/chapters/${chapter.id}`, { name: editName.value })
+    chapter.name = editName.value
+    editingChapter.value = null
+  } catch (error: any) {
+    errorMessage.value = error.message
+  }
+}
 
-async function deleteChapter(id: string) { if (!confirm('删除此章节？照片将变为未分配。')) return; try { await fetch(`${API_BASE}/albums/${albumId.value}/chapters/${id}`, { method: 'DELETE' }); await loadData() } catch (e: any) { errorMessage.value = e.message } }
+async function deleteChapter(id: string) {
+  if (!confirm('删除该章节后，其中照片会回到未分配区。确定继续吗？')) return
+  try {
+    await httpDelete(`/albums/${albumId.value}/chapters/${id}`)
+    await loadData()
+  } catch (error: any) {
+    errorMessage.value = error.message
+  }
+}
 
 async function movePhoto(photoId: string, targetChapterId: string) {
   if (targetChapterId === ORPHAN_ID) {
-    errorMessage.value = '移回未分配区域暂不支持，请删除对应章节来释放照片。'
+    errorMessage.value = '当前版本暂不支持直接拖回未分配区，可通过删除章节释放照片。'
     return
   }
   try {
-    await fetch(`${API_BASE}/albums/${albumId.value}/chapters/move-photos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photo_ids: [photoId], target_chapter_id: targetChapterId })
-    })
+    await httpPost(`/albums/${albumId.value}/chapters/move-photos`, { photo_ids: [photoId], target_chapter_id: targetChapterId })
     await loadData()
-  } catch (e: any) { errorMessage.value = e.message }
+  } catch (error: any) {
+    errorMessage.value = error.message
+  }
 }
 
-function goNext() { router.push(`/albums/${albumId.value}/planning`) }
+function goNext() {
+  void router.push(`/albums/${albumId.value}/planning`)
+}
 
-const { isDragging, dragPhotoId, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, getDragPhotoClass, getDropTargetClass } = usePhotoDrag({
+const { isDragging, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, getDragPhotoClass, getDropTargetClass } = usePhotoDrag({
   onPhotoMove: movePhoto,
   orphanAreaId: ORPHAN_ID,
 })
 
-onMounted(loadData); watch(() => albumId.value, loadData)
+onMounted(async () => {
+  await loadData()
+  await refreshTask()
+})
+watch(
+  () => albumId.value,
+  async () => {
+    await loadData()
+    await refreshTask()
+  },
+)
 </script>
 
 <template>
   <WorkflowStepper v-if="albumId" :album-id="albumId" :album-status="albumStatus" />
+
   <div class="space-y-6">
-    <div v-if="!loading && needCleaning" class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 flex items-center justify-between">
-      <span>请先完成照片清洗，再进入章节聚类。</span>
-      <button class="rounded-full bg-amber-200 px-4 py-1.5 text-xs text-amber-800 hover:bg-amber-300" @click="goBack">返回清洗</button>
-    </div>
-    <SectionCard title="章节聚类" description="系统按时间自动分组，也可手动创建章节、移动照片。"
-      eyebrow="步骤 3" tone="accent">
-      <div class="flex flex-wrap items-center gap-3">
-        <button class="rounded-full bg-cyan-600 px-5 py-3 text-sm text-white hover:bg-cyan-700 disabled:bg-slate-400" :disabled="!albumId || actionLoading" @click="startCluster">{{ actionLoading ? '聚类中...' : '启动自动聚类' }}</button>
-        <div class="flex items-center gap-2">
-          <input v-model="newChapterName" type="text" placeholder="新章节名称" class="rounded-full border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-cyan-400 w-36" @keyup.enter="createChapter" />
-          <button class="rounded-full border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm text-cyan-700 hover:bg-cyan-100" @click="createChapter">+ 添加</button>
+    <StoryHero
+      eyebrow="Chapter Assembly"
+      title="把镜头整理成可以阅读的故事章节"
+      description="系统会尝试自动聚类，但最终章节结构仍由你把控。每个章节更像一本书里的段落，而不是机械标签。"
+    >
+      <div class="grid gap-4 md:grid-cols-3">
+        <div class="story-panel rounded-[24px] px-4 py-4">
+          <p class="font-story text-3xl text-[var(--story-gold-soft)]">{{ allPhotos.length }}</p>
+          <p class="mt-2 text-sm text-[var(--story-text)]">可用镜头</p>
         </div>
-        <span v-if="successMessage" class="text-sm text-emerald-600">{{ successMessage }}</span>
-        <span v-if="errorMessage" class="text-sm text-rose-600">{{ errorMessage }}</span>
-        <button v-if="chapters.length > 0"
-          class="ml-auto rounded-full border border-cyan-300 bg-cyan-50 px-6 py-3 text-sm text-cyan-700 hover:bg-cyan-100 shadow-sm"
-          @click="goNext">下一步：页面排版 &rarr;</button>
+        <div class="story-panel rounded-[24px] px-4 py-4">
+          <p class="font-story text-3xl text-[var(--story-gold-soft)]">{{ chapters.length }}</p>
+          <p class="mt-2 text-sm text-[var(--story-text)]">已成形章节</p>
+        </div>
+        <div class="story-panel rounded-[24px] px-4 py-4">
+          <p class="font-story text-3xl text-[var(--story-gold-soft)]">{{ getOrphans().length }}</p>
+          <p class="mt-2 text-sm text-[var(--story-text)]">未分配镜头</p>
+        </div>
       </div>
-      <p class="mt-2 text-xs text-slate-400">{{ allPhotos.length }} 张保留照片，{{ chapters.length }} 个章节，{{ getOrphans().length }} 张未分配</p>
-      <p v-if="isDragging" class="mt-1 text-xs text-cyan-600 animate-pulse">拖拽照片到目标章节即可移动</p>
+    </StoryHero>
+
+    <SectionCard
+      title="章节整理"
+      description="你可以先自动聚类，再手动重命名章节、调整照片归属，让叙事结构更符合你的想法。"
+      tone="film"
+      eyebrow="Step 3"
+    >
+      <div v-if="!loading && needCleaning" class="rounded-[22px] border border-[#8e6732] bg-[rgba(170,120,44,0.14)] px-4 py-4 text-sm text-[var(--story-muted)]">
+        请先完成镜头筛选，再进入章节整理。
+        <button class="story-button-secondary ml-3 px-4 py-2 text-sm" @click="goBack">返回筛选页</button>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <button class="story-button px-6 py-3 text-sm" :disabled="!albumId || actionLoading" @click="startCluster">
+          {{ actionLoading ? '整理中...' : '自动整理章节' }}
+        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            v-model="newChapterName"
+            type="text"
+            placeholder="新章节名称"
+            class="rounded-full border border-[rgba(224,177,106,0.18)] bg-[rgba(255,255,255,0.05)] px-4 py-3 text-sm text-[var(--story-text)] outline-none placeholder:text-[var(--story-faint)]"
+            @keyup.enter="createChapter"
+          />
+          <button class="story-button-secondary px-4 py-3 text-sm" @click="createChapter">新增章节</button>
+        </div>
+        <button v-if="chapters.length > 0" class="story-button-secondary ml-auto px-6 py-3 text-sm" @click="goNext">
+          进入页面编排 →
+        </button>
+      </div>
+
+      <div class="mt-4">
+        <AlbumTaskStatusCard
+          :task="latestTask"
+          title="章节整理任务"
+          running-hint="系统正在整理章节结构，页面会自动轮询最新状态。"
+          empty-text="点击“自动整理章节”后，这里会显示任务状态、AI 回退信息和章节结果摘要。"
+        />
+      </div>
+
+      <div v-if="successMessage || errorMessage" class="mt-4 flex flex-col gap-3">
+        <p v-if="successMessage" class="rounded-[18px] bg-[#dcead5] px-4 py-3 text-sm text-[#47673d]">{{ successMessage }}</p>
+        <p v-if="errorMessage" class="rounded-[18px] bg-[#f6d9d3] px-4 py-3 text-sm text-[#8b4339]">{{ errorMessage }}</p>
+      </div>
+
+      <p v-if="isDragging" class="mt-4 text-xs text-[var(--story-faint)]">拖动照片到目标章节，即可调整故事归属。</p>
     </SectionCard>
 
-    <div v-if="chapters.length > 0" class="space-y-3">
-      <div v-for="chapter in chapters" :key="chapter.id"
-        class="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm"
+    <div v-if="chapters.length > 0" class="space-y-4">
+      <article
+        v-for="chapter in chapters"
+        :key="chapter.id"
+        class="story-panel overflow-hidden rounded-[28px]"
         :class="getDropTargetClass(chapter.id)"
-        @dragover.prevent="(e: DragEvent) => onDragOver(e, chapter.id)"
+        @dragover.prevent="(event: DragEvent) => onDragOver(event, chapter.id)"
         @dragleave="() => onDragLeave(chapter.id)"
-        @drop="(e: DragEvent) => onDrop(e, chapter.id)">
-        <div class="flex items-center justify-between px-4 py-3 bg-slate-50 cursor-pointer" @click="expandedChapter = expandedChapter === chapter.id ? null : chapter.id">
-          <div class="flex items-center gap-3">
-            <span class="text-xs text-slate-400">{{ expandedChapter === chapter.id ? 'v' : '>' }}</span>
-            <div v-if="editingChapter === chapter.id" @click.stop><input v-model="editName" class="rounded-lg border border-cyan-300 px-2 py-1 text-sm outline-none" @keyup.enter="renameChapter(chapter)" @blur="renameChapter(chapter)" autofocus /></div>
-            <div v-else><p class="text-base font-semibold text-slate-900">{{ chapter.name }}</p><p class="text-xs text-slate-500">{{ chapter.description || '' }} · {{ (chapter.photo_ids || []).length }} 张</p></div>
-          </div>
-          <div class="flex gap-2" @click.stop>
-            <button class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 hover:bg-slate-200" @click="editName = chapter.name; editingChapter = chapter.id">重命名</button>
-            <button class="rounded-full bg-rose-50 px-3 py-1 text-xs text-rose-600 hover:bg-rose-100" @click="deleteChapter(chapter.id)">删除</button>
-          </div>
-        </div>
-        <div v-if="expandedChapter === chapter.id" class="border-t border-slate-100 px-4 py-3">
-          <div v-if="getPhotos(chapter.photo_ids || []).length === 0" class="py-8 text-center text-sm text-slate-400">暂无照片，拖入照片到此章节</div>
-          <div v-else class="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            <div v-for="photo in getPhotos(chapter.photo_ids || [])" :key="photo.id"
-              class="group relative rounded-xl border border-slate-200 overflow-hidden select-none"
-              :class="getDragPhotoClass(photo.id)"
-              draggable="true"
-              @dragstart="(e: DragEvent) => onDragStart(e, photo.id, chapter.id)"
-              @dragend="onDragEnd">
-              <img :src="photo.url" :alt="photo.filename" class="h-20 w-full object-cover pointer-events-none" />
-              <p class="truncate px-2 py-1 text-xs text-slate-600">{{ photo.filename }}</p>
+        @drop="(event: DragEvent) => onDrop(event, chapter.id)"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-5">
+          <div class="flex-1">
+            <div v-if="editingChapter === chapter.id">
+              <input
+                v-model="editName"
+                class="w-full rounded-[18px] border border-[rgba(224,177,106,0.24)] bg-[rgba(255,255,255,0.05)] px-4 py-3 text-lg text-[var(--story-text)] outline-none"
+                autofocus
+                @keyup.enter="renameChapter(chapter)"
+                @blur="renameChapter(chapter)"
+              />
+            </div>
+            <div v-else>
+              <p class="font-story text-4xl text-[var(--story-gold-soft)]">{{ chapter.name }}</p>
+              <p class="mt-2 text-sm text-[var(--story-muted)]">{{ chapter.description || '这一章正在等待你填入更明确的叙事重点。' }}</p>
+              <p class="mt-2 text-xs uppercase tracking-[0.22em] text-[var(--story-faint)]">
+                {{ (chapter.photo_ids || []).length }} Frames
+              </p>
             </div>
           </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button class="story-button-secondary px-4 py-2 text-sm" @click="expandedChapter = expandedChapter === chapter.id ? null : chapter.id">
+              {{ expandedChapter === chapter.id ? '收起' : '展开章节' }}
+            </button>
+            <button class="story-button-secondary px-4 py-2 text-sm" @click="editName = chapter.name; editingChapter = chapter.id">重命名</button>
+            <button class="rounded-full bg-[#f2d8d2] px-4 py-2 text-sm text-[#8b4339] hover:brightness-95" @click="deleteChapter(chapter.id)">删除</button>
+          </div>
         </div>
-      </div>
+
+        <div v-if="expandedChapter === chapter.id" class="border-t border-[rgba(224,177,106,0.14)] px-5 py-5">
+          <div v-if="getPhotos(chapter.photo_ids || []).length === 0" class="rounded-[22px] border border-dashed border-[rgba(224,177,106,0.18)] px-5 py-10 text-center text-sm text-[var(--story-muted)]">
+            这个章节还没有镜头。把照片拖拽到这里，或先运行自动整理。
+          </div>
+          <div v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <article
+              v-for="photo in getPhotos(chapter.photo_ids || [])"
+              :key="photo.id"
+              class="film-frame overflow-hidden rounded-[22px] bg-[rgba(255,255,255,0.04)]"
+              :class="getDragPhotoClass(photo.id)"
+              draggable="true"
+              @dragstart="(event: DragEvent) => onDragStart(event, photo.id, chapter.id)"
+              @dragend="onDragEnd"
+            >
+              <ProtectedImage :src="photo.url" :alt="photo.filename" class="h-44 w-full object-cover pointer-events-none" />
+              <div class="px-3 py-3">
+                <p class="truncate text-sm text-[var(--story-text)]">{{ photo.filename }}</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </article>
     </div>
 
-    <SectionCard v-if="getOrphans().length > 0" title="未分配照片" :description="`${getOrphans().length} 张未归属任何章节`">
-      <div class="grid gap-2 sm:grid-cols-4 lg:grid-cols-6"
-        :class="getDropTargetClass(ORPHAN_ID)"
-        @dragover.prevent="(e: DragEvent) => onDragOver(e, ORPHAN_ID)"
-        @dragleave="() => onDragLeave(ORPHAN_ID)"
-        @drop="(e: DragEvent) => onDrop(e, ORPHAN_ID)">
-        <div v-for="photo in getOrphans()" :key="photo.id"
-          class="rounded-xl border border-dashed border-slate-300 bg-slate-50 overflow-hidden select-none"
+    <SectionCard
+      v-if="getOrphans().length > 0"
+      title="待归档镜头"
+      :description="`${getOrphans().length} 张照片还没有进入任何章节。`"
+      tone="accent"
+      eyebrow="Unassigned"
+    >
+      <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <article
+          v-for="photo in getOrphans()"
+          :key="photo.id"
+          class="overflow-hidden rounded-[22px] border border-dashed border-[rgba(79,59,42,0.22)] bg-white/60"
           :class="getDragPhotoClass(photo.id)"
           draggable="true"
-          @dragstart="(e: DragEvent) => onDragStart(e, photo.id, ORPHAN_ID)"
-          @dragend="onDragEnd">
-          <img :src="photo.url" :alt="photo.filename" class="h-16 w-full object-cover pointer-events-none" />
-          <div class="px-2 py-1.5"><p class="truncate text-[10px] text-slate-600">{{ photo.filename }}</p></div>
-        </div>
+          @dragstart="(event: DragEvent) => onDragStart(event, photo.id, ORPHAN_ID)"
+          @dragend="onDragEnd"
+        >
+          <ProtectedImage :src="photo.url" :alt="photo.filename" class="h-36 w-full object-cover pointer-events-none" />
+          <div class="px-3 py-3">
+            <p class="truncate text-sm text-[#241c16]">{{ photo.filename }}</p>
+          </div>
+        </article>
       </div>
     </SectionCard>
 
-    <div v-if="!loading && chapters.length === 0 && albumId" class="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center"><p class="text-slate-500">暂无章节，请点击「启动自动聚类」或手动「添加」。</p></div>
+    <div v-if="!loading && chapters.length === 0 && albumId" class="story-panel rounded-[28px] px-6 py-12 text-center">
+      <p class="font-story text-4xl text-[var(--story-gold-soft)]">No Chapters Yet</p>
+      <p class="mt-3 text-sm text-[var(--story-muted)]">先点击“自动整理章节”，或者手动新建第一章。</p>
+    </div>
   </div>
 </template>

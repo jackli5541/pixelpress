@@ -1,13 +1,20 @@
-from datetime import datetime, UTC
 from pathlib import Path
-from uuid import uuid4
 
 from pydantic import BaseModel
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from slowapi.util import get_remote_address
 
+from app.core.config import get_settings
+from app.core.rate_limit import limiter
+from fastapi.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.dependencies import get_current_user
+from app.auth.ownership import require_album_access
 from app.common.responses import success_response
-from app.storage.file_store import get_album_upload_dir
-from app.storage.memory_store import memory_store
+from app.db.session import get_db
+from app.services.photo_service import PhotoService
+from app.storage.file_store import get_file_storage
 
 
 class UpdatePhotoPayload(BaseModel):
@@ -17,140 +24,88 @@ class UpdatePhotoPayload(BaseModel):
 
 router = APIRouter(prefix="/albums/{album_id}/photos", tags=["photos"])
 
-ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic"}
+
+def _validate_upload_request(files: list[UploadFile]) -> None:
+    settings = get_settings()
+    if len(files) > settings.upload_max_files_per_request:
+        raise HTTPException(status_code=413, detail="too many files in upload request")
 
 
 @router.get("")
-def list_photos(album_id: str, recommendation: str = "all") -> dict:
+async def list_photos(album_id: str, recommendation: str = "all", db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """列出照片。recommendation 参数：
     - "all"（默认）：返回全部照片
     - "keep"：仅返回建议保留的照片（cleaning_recommendation 为 "keep" 或 null）
     - "remove"：仅返回建议移除的照片
     """
-    if memory_store.get_album(album_id) is None:
+    await require_album_access(db, user, album_id)
+    service = PhotoService(db)
+    payload = await service.list_photos(album_id, recommendation)
+    if payload is None:
         raise HTTPException(status_code=404, detail="album not found")
-
-    photos = memory_store.list_photos(album_id)
-
-    if recommendation == "keep":
-        photos = [p for p in photos if p.get("cleaning_recommendation") != "remove"]
-    elif recommendation == "remove":
-        photos = [p for p in photos if p.get("cleaning_recommendation") == "remove"]
-
-    return success_response({
-        "album_id": album_id,
-        "count": len(photos),
-        "items": photos,
-    })
+    return success_response(payload)
 
 
 @router.get("/{photo_id}")
-def get_photo(album_id: str, photo_id: str) -> dict:
-    if memory_store.get_album(album_id) is None:
-        raise HTTPException(status_code=404, detail="album not found")
-
-    photo = memory_store.get_photo(album_id, photo_id)
+async def get_photo(album_id: str, photo_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+    await require_album_access(db, user, album_id)
+    photo = await PhotoService(db).get_photo(album_id, photo_id)
     if photo is None:
         raise HTTPException(status_code=404, detail="photo not found")
-
     return success_response(photo)
 
 
 @router.post("/upload")
-async def upload_photos(album_id: str, files: list[UploadFile] = File(...)) -> dict:
-    album = memory_store.get_album(album_id)
-    if album is None:
-        raise HTTPException(status_code=404, detail="album not found")
-
+@limiter.limit(get_settings().rate_limit_upload, key_func=get_remote_address)
+async def upload_photos(request: Request, album_id: str, files: list[UploadFile] = File(...), db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+    await require_album_access(db, user, album_id)
     if not files:
         raise HTTPException(status_code=400, detail="no files uploaded")
-
-    album_dir = get_album_upload_dir(album_id)
-    uploaded_items: list[dict] = []
-    rejected_items: list[dict] = []
-
-    for file in files:
-        original_name = file.filename or "untitled"
-        suffix = Path(original_name).suffix.lower()
-        content_type = file.content_type or ""
-
-        if suffix not in ALLOWED_IMAGE_EXTENSIONS and not content_type.startswith("image/"):
-            rejected_items.append({
-                "filename": original_name,
-                "reason": f"unsupported file type: {suffix}",
-            })
-            await file.close()
-            continue
-
-        photo_id = str(uuid4())
-        target_suffix = suffix or ".jpg"
-        target_name = f"{photo_id}{target_suffix}"
-        target_path = album_dir / target_name
-        file_bytes = await file.read()
-        target_path.write_bytes(file_bytes)
-        file_size = len(file_bytes)
-        await file.close()
-
-        # 尝试读取图片尺寸（基础方法：从文件头解析）
-        width, height = _get_image_dimensions(target_path, suffix)
-
-        photo_record = {
-            "id": photo_id,
-            "album_id": album_id,
-            "filename": original_name,
-            "content_type": content_type,
-            "size": file_size,
-            "width": width,
-            "height": height,
-            "storage_key": f"{album_id}/{target_name}",
-            "url": f"/uploads/{album_id}/{target_name}",
-            "uploaded_at": datetime.now(UTC).isoformat(),
-        }
-        uploaded_items.append(memory_store.add_photo(album_id, photo_record))
-
-    return success_response({
-        "album_id": album_id,
-        "uploaded": uploaded_items,
-        "rejected": rejected_items,
-    }, "photos uploaded")
+    _validate_upload_request(files)
+    try:
+        payload = await PhotoService(db).upload_photos(album_id, files)
+    except ValueError as exc:
+        if str(exc) == "upload batch too large":
+            raise HTTPException(status_code=413, detail="upload batch too large") from exc
+        raise
+    if payload is None:
+        raise HTTPException(status_code=404, detail="album not found")
+    return success_response(payload, "photos uploaded")
 
 
 @router.patch("/{photo_id}")
-def update_photo(album_id: str, photo_id: str, payload: UpdatePhotoPayload) -> dict:
+async def update_photo(album_id: str, photo_id: str, payload: UpdatePhotoPayload, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """更新照片元数据（清洗建议、说明文字、标签）。"""
-    if memory_store.get_album(album_id) is None:
-        raise HTTPException(status_code=404, detail="album not found")
-
-    photo = memory_store.get_photo(album_id, photo_id)
-    if photo is None:
+    await require_album_access(db, user, album_id)
+    updated = await PhotoService(db).update_photo(album_id, photo_id, payload.model_dump(exclude_none=True))
+    if updated is None:
         raise HTTPException(status_code=404, detail="photo not found")
-
-    updates = payload.model_dump(exclude_none=True)
-    updated = memory_store.update_photo(album_id, photo_id, updates)
     return success_response(updated, "photo updated")
 
 
 @router.delete("/{photo_id}")
-def delete_photo(album_id: str, photo_id: str) -> dict:
+async def delete_photo(album_id: str, photo_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """从相册中删除一张照片。"""
-    if memory_store.get_album(album_id) is None:
-        raise HTTPException(status_code=404, detail="album not found")
+    await require_album_access(db, user, album_id)
+    deleted = await PhotoService(db).delete_photo(album_id, photo_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="photo not found")
+    return success_response(None, "photo deleted")
 
-    photo = memory_store.get_photo(album_id, photo_id)
+
+@router.get("/{photo_id}/content")
+async def get_photo_content(album_id: str, photo_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> Response:
+    await require_album_access(db, user, album_id)
+    photo = await PhotoService(db).get_photo(album_id, photo_id)
     if photo is None:
         raise HTTPException(status_code=404, detail="photo not found")
-
-    # 删除磁盘文件
-    album_dir = get_album_upload_dir(album_id)
-    storage_key = photo.get("storage_key", "")
-    file_name = Path(storage_key).name if storage_key else ""
-    if file_name:
-        file_path = album_dir / file_name
-        if file_path.exists():
-            file_path.unlink()
-
-    memory_store.delete_photo(album_id, photo_id)
-    return success_response(None, "photo deleted")
+    try:
+        content = await get_file_storage().open_file(photo["storage_key"])
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="photo content not found") from None
+    except Exception:
+        raise HTTPException(status_code=502, detail="photo content unavailable") from None
+    return Response(content=content, media_type=photo.get("content_type") or "application/octet-stream")
 
 
 def _get_image_dimensions(file_path: Path, suffix: str) -> tuple[int | None, int | None]:
