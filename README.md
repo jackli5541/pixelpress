@@ -36,7 +36,7 @@ flowchart LR
 | 数据库 | PostgreSQL |
 | ORM | SQLAlchemy 2.0 |
 | 对象存储 | MinIO / S3 / Local artifact storage |
-| AI 服务 | 可配置 Provider（当前代码以 openai-compatible 配置链路为主） |
+| AI 服务 | 项目级可配置 Provider（当前实现支持 openai-compatible 链路） |
 | PDF 导出 | Playwright（HTML → PDF 高保真渲染） |
 
 ## 系统架构
@@ -50,7 +50,7 @@ flowchart TB
 
     subgraph Backend["后端层 (Python 3.11)"]
         API["FastAPI API"]
-        W["Celery Worker"]
+        W["ARQ Worker"]
         subgraph Engine["引擎层"]
             E1["清洗引擎"]
             E2["聚类引擎"]
@@ -134,14 +134,16 @@ pixpress1/
 - 导出 PDF 走 Playwright
 - render / export / artifact cleanup 的 Docker 定向测试
 
-### 当前实现状态（A 任务）
+### 当前实现状态
 
-当前仓库已完成 A 任务的主线落地，具备以下能力：
+当前仓库已具备从相册创建、上传、清洗、章节聚类、页面规划、渲染到导出的主流程，并已实现：
 
-- **A1**：PostgreSQL + SQLAlchemy Async + Alembic 骨架
-- **A2**：统一文件存储抽象，支持 Local / MinIO 实现
-- **A3**：注册 / 登录 / JWT 鉴权 + owner/admin 基础访问控制
-- 前端已同步：登录/注册入口、受保护图片显示、带 token 的导出与任务访问
+- PostgreSQL + SQLAlchemy Async + Alembic 数据库迁移
+- Local / MinIO 统一文件存储抽象，以及渲染产物和预览访问控制
+- 注册 / 登录 / JWT 鉴权、owner/admin 访问控制、登录与接口限流
+- ARQ + Redis 异步任务队列，支持任务查询、取消与阶段性处理
+- 项目管理、项目级 AI Provider 配置与连通性测试、管理员审计日志
+- 前端登录/注册、项目绑定、受保护图片、任务状态与导出流程
 
 ### 前置依赖
 
@@ -237,11 +239,14 @@ MINIO_BUCKET=pixpress1
 MINIO_SECURE=false
 STORAGE_BACKEND=local
 AUTH_SECRET_KEY=change-me-in-production
+SECRETS_MASTER_KEY=change-me-too
 ```
 
 说明：
 - `STORAGE_BACKEND=local`：使用本地文件存储
 - `STORAGE_BACKEND=minio`：切换为 MinIO 存储
+- `MINIO_ENDPOINT=127.0.0.1:9100` 对应根目录旧开发 Compose 的主机端口映射；推荐通过 `start.bat` 启动时，MinIO 仅在容器网络中以 `minio:9000` 提供服务。
+- 生产环境必须设置长度至少为 32 的 `AUTH_SECRET_KEY` 和 `SECRETS_MASTER_KEY`，且两者不能相同。
 
 #### 2. 启动后端
 
@@ -353,4 +358,5 @@ stateDiagram-v2
 | `MINIO_SECURE` | MinIO 是否 HTTPS | `false` |
 | `STORAGE_BACKEND` | 存储后端 `local|minio` | `local` |
 | `AUTH_SECRET_KEY` | JWT 密钥 | `change-me-in-production` |
+| `SECRETS_MASTER_KEY` | 加密项目级 AI 配置等敏感信息的主密钥 | `change-me-too` |
 | `UPLOADS_DIR` | 本地上传目录 | `uploads` |
