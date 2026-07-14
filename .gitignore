@@ -35,6 +35,7 @@ frontend/dist/
 *~
 .claude/settings.local.json
 .trae/
+.codex/
 
 # ==================== System files ====================
 .DS_Store
