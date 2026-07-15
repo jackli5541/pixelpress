@@ -10,6 +10,7 @@ from app.models.export import Export
 from app.models.page import Page
 from app.models.photo import Photo
 from app.models.task import Task
+from app.services.photo_selection import is_photo_included
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -65,6 +66,9 @@ def serialize_album(album: Album) -> dict[str, Any]:
 
 
 def serialize_photo(photo: Photo) -> dict[str, Any]:
+    features = dict(photo.cleaning_features or {})
+    features.pop("color_histogram", None)
+    effective_recommendation = photo.cleaning_decision
     return {
         "id": photo.id,
         "album_id": photo.album_id,
@@ -83,14 +87,28 @@ def serialize_photo(photo: Photo) -> dict[str, Any]:
         "device_model": photo.device_model,
         "quality_score": photo.quality_score,
         "scene_tags": photo.scene_tags,
-        "cleaning_recommendation": photo.cleaning_recommendation,
+        "cleaning_recommendation": effective_recommendation,
         "cleaning_issues": photo.cleaning_issues,
+        "cleaning": {
+            "suggestion": photo.cleaning_suggestion,
+            "confidence": photo.cleaning_confidence,
+            "decision": photo.cleaning_decision,
+            "decision_source": photo.cleaning_decision_source,
+            "decided_at": _iso(photo.cleaning_decided_at),
+            "excluded": photo.cleaning_decision == "remove",
+            "analysis_version": photo.cleaning_analysis_version,
+            "features": features or None,
+        },
         "custom_caption": photo.custom_caption,
     }
 
 
 def serialize_chapter(chapter: Chapter) -> dict[str, Any]:
-    photo_ids = [link.photo_id for link in sorted(chapter.photo_links, key=lambda item: item.order_index)]
+    photo_ids = [
+        link.photo_id
+        for link in sorted(chapter.photo_links, key=lambda item: item.order_index)
+        if link.__dict__.get("photo") is None or is_photo_included(link.__dict__["photo"])
+    ]
     return {
         "id": chapter.id,
         "album_id": chapter.album_id,
@@ -103,7 +121,11 @@ def serialize_chapter(chapter: Chapter) -> dict[str, Any]:
 
 
 def serialize_page(page: Page) -> dict[str, Any]:
-    photo_ids = [link.photo_id for link in sorted(page.photo_links, key=lambda item: item.order_index)]
+    photo_ids = [
+        link.photo_id
+        for link in sorted(page.photo_links, key=lambda item: item.order_index)
+        if link.__dict__.get("photo") is None or is_photo_included(link.__dict__["photo"])
+    ]
     preview_snippet = (page.html or "")[:800]
     return {
         "id": page.id,

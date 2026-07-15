@@ -44,7 +44,7 @@ class ChapterRepository:
         result = await self.session.execute(
             select(Chapter)
             .where(Chapter.album_id == album_id)
-            .options(selectinload(Chapter.photo_links))
+            .options(selectinload(Chapter.photo_links).selectinload(ChapterPhoto.photo))
             .order_by(Chapter.order_index, Chapter.created_at)
         )
         return list(result.scalars().all())
@@ -53,7 +53,7 @@ class ChapterRepository:
         result = await self.session.execute(
             select(Chapter)
             .where(Chapter.album_id == album_id, Chapter.id == chapter_id)
-            .options(selectinload(Chapter.photo_links))
+            .options(selectinload(Chapter.photo_links).selectinload(ChapterPhoto.photo))
         )
         return result.scalar_one_or_none()
 

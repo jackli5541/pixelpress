@@ -4,6 +4,8 @@
 
 ## 先这样工作
 
+- 开始开发前先同步最新 `origin/album-v1`，每项功能都从它新建独立功能分支；不要多人共用功能分支，也不要直接修改 `album-v1` 或 `main`。
+- 完成后向 `album-v1` 提 PR，不要自行合并；至少经过一名其他成员审核，并等所有必需检查通过后再合并。
 - 优先用 `start.bat` 管理容器，不要自己重拼一套启动命令。它统一处理 `compose.prod.yml`、`compose.test.yml` 和运行时环境变量。
 - 后端改动默认落在 `modules -> services -> repositories` 这条链上；不要把业务逻辑直接塞回 `api.py`。
 - 核心流程按阶段拆分，保持 API、Service、Engine、Repository、Storage 职责边界；不要继续堆大文件、大 Service 或大页面。

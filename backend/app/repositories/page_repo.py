@@ -44,7 +44,7 @@ class PageRepository:
         result = await self.session.execute(
             select(Page)
             .where(Page.album_id == album_id)
-            .options(selectinload(Page.photo_links))
+            .options(selectinload(Page.photo_links).selectinload(PagePhoto.photo))
             .order_by(Page.page_number, Page.created_at)
         )
         return list(result.scalars().all())
@@ -53,7 +53,7 @@ class PageRepository:
         result = await self.session.execute(
             select(Page)
             .where(Page.album_id == album_id, Page.id == page_id)
-            .options(selectinload(Page.photo_links))
+            .options(selectinload(Page.photo_links).selectinload(PagePhoto.photo))
         )
         return result.scalar_one_or_none()
 

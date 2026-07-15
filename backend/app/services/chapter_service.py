@@ -14,6 +14,7 @@ from app.repositories.chapter_repo import ChapterRepository
 from app.repositories.photo_repo import PhotoRepository
 from app.repositories.task_repo import TaskRepository
 from app.services.project_ai_config_service import ProjectAIConfigService
+from app.services.photo_selection import is_photo_included
 from app.services.render_artifact_service import RenderArtifactService, clear_render_artifacts
 from app.services.serializers import serialize_chapter
 from app.services.task_runtime_service import TaskRuntimeService
@@ -196,7 +197,7 @@ class ChapterService:
             await self.runtime.ensure_revision_matches(task_id, album.content_revision)
             await self.runtime.heartbeat_step(task_id, "loading_photos", 10)
             photos = await self.photo_repo.list_photos(album_id)
-            keep_photos = [photo for photo in photos if photo.cleaning_recommendation != "remove"]
+            keep_photos = [photo for photo in photos if is_photo_included(photo)]
             if not keep_photos:
                 album.status = AlbumStatus.CLUSTERED
                 album.content_revision += 1

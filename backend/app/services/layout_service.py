@@ -26,6 +26,7 @@ from app.repositories.page_repo import PageRepository
 from app.repositories.photo_repo import PhotoRepository
 from app.repositories.task_repo import TaskRepository
 from app.services.project_ai_config_service import ProjectAIConfigService
+from app.services.photo_selection import is_photo_included
 from app.services.render_artifact_service import RenderArtifactService, clear_render_artifacts
 from app.services.serializers import serialize_page
 from app.services.task_runtime_service import TaskRuntimeService
@@ -298,7 +299,7 @@ class LayoutService:
             await self.runtime.ensure_revision_matches(task_id, album.content_revision)
             await self.runtime.heartbeat_step(task_id, "loading_album_context", 10)
             photos = await self.photo_repo.list_photos(album_id)
-            keep_photos = [photo for photo in photos if photo.cleaning_recommendation != "remove"]
+            keep_photos = [photo for photo in photos if is_photo_included(photo)]
             if not keep_photos:
                 album.status = AlbumStatus.PLANNED
                 album.content_revision += 1
@@ -538,7 +539,7 @@ class LayoutService:
                 await self.session.commit()
                 return None
 
-            photos_by_id = {photo.id: photo for photo in await self.photo_repo.list_photos(album_id)}
+            photos_by_id = {photo.id: photo for photo in await self.photo_repo.list_photos(album_id) if is_photo_included(photo)}
             preview_sources = self._build_preview_photo_sources(photos_by_id)
             embedded_sources, embed_failures = await self._build_embedded_photo_sources(photos_by_id)
             chapters = await self.chapter_repo.list_chapters(album_id)
@@ -582,7 +583,11 @@ class LayoutService:
                         chapter.name,
                         chapter.description,
                         chapter_index=chapter_order,
-                        photo_count=len(chapter.photo_links),
+                        photo_count=sum(
+                            1
+                            for link in chapter.photo_links
+                            if link.__dict__.get("photo") is None or is_photo_included(link.__dict__["photo"])
+                        ),
                         page_count=len(grouped_pages),
                         style_key=chapter_style,
                         style_presets=STYLE_PRESETS,
