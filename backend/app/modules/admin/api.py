@@ -12,16 +12,10 @@ from app.repositories.project_repo import ProjectRepository
 from app.repositories.user_repo import UserRepository
 from app.services.admin_audit_service import AdminAuditService
 from app.services.project_ai_config_service import ProjectAIConfigService
+from app.services.default_ai_provider_config_service import DEFAULT_STAGES, DefaultAIProviderConfigService
 from app.services.project_service import ProjectService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-class CreateProjectPayload(BaseModel):
-    user_id: str | None = None
-    name: str
-    code: str | None = None
-    status: str = "active"
 
 
 class UpdateProjectPayload(BaseModel):
@@ -50,6 +44,10 @@ class UpdateAIConfigPayload(BaseModel):
     remark: str | None = None
 
 
+class UpdateDefaultAIConfigPayload(UpdateAIConfigPayload):
+    pass
+
+
 @router.get("/users")
 async def list_users(db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
     users = await UserRepository(db).list_users()
@@ -71,20 +69,6 @@ async def list_projects(db: AsyncSession = Depends(get_db), user=Depends(require
     return success_response(await ProjectService(db).list_projects())
 
 
-@router.post("/projects")
-async def create_project(payload: CreateProjectPayload, db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
-    created = await ProjectService(db).create_project(payload.model_dump())
-    await AdminAuditService(db).log(
-        admin_user_id=user.id,
-        action="create_project",
-        resource_type="project",
-        resource_id=created["id"],
-        payload=created,
-    )
-    await db.commit()
-    return success_response(created, "project created")
-
-
 @router.patch("/projects/{project_id}")
 async def update_project(project_id: str, payload: UpdateProjectPayload, db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
     updated = await ProjectService(db).update_project(project_id, payload.model_dump(exclude_none=True))
@@ -99,6 +83,67 @@ async def update_project(project_id: str, payload: UpdateProjectPayload, db: Asy
     )
     await db.commit()
     return success_response(updated, "project updated")
+
+
+@router.delete("/projects/{project_id}")
+async def delete_project(project_id: str, force: bool = Query(default=False), db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
+    service = ProjectService(db)
+    try:
+        result = await service.delete_project_deep(project_id, user_id=user.id, is_admin=True, force=force)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await AdminAuditService(db).log(
+        admin_user_id=user.id,
+        action="force_delete_project" if force else "delete_project",
+        resource_type="project",
+        resource_id=project_id,
+        payload={"force": force, **result},
+    )
+    await db.commit()
+    return success_response(result, "project deleted")
+
+
+@router.get("/ai-default-configs")
+async def list_default_ai_configs(db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
+    return success_response(await DefaultAIProviderConfigService(db).ensure_defaults())
+
+
+@router.patch("/ai-default-configs/{stage}")
+async def update_default_ai_config(stage: str, payload: UpdateDefaultAIConfigPayload, db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
+    if stage not in DEFAULT_STAGES:
+        raise HTTPException(status_code=404, detail="default config stage not found")
+    updated = await DefaultAIProviderConfigService(db).update_config(stage, payload.model_dump(exclude_none=True), admin_user_id=user.id)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="default config stage not found")
+    await AdminAuditService(db).log(
+        admin_user_id=user.id,
+        action="update_default_ai_config",
+        resource_type="default_ai_provider_config",
+        resource_id=updated["id"],
+        payload={"stage": stage, **payload.model_dump(exclude_none=True)},
+    )
+    await db.commit()
+    return success_response(updated, "default ai config updated")
+
+
+@router.post("/ai-default-configs/{stage}/test")
+async def test_default_ai_config(stage: str, db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
+    if stage not in DEFAULT_STAGES:
+        raise HTTPException(status_code=404, detail="default config stage not found")
+    result = await DefaultAIProviderConfigService(db).test_config(stage)
+    if result is None:
+        raise HTTPException(status_code=404, detail="default config stage not found")
+    await AdminAuditService(db).log(
+        admin_user_id=user.id,
+        action="test_default_ai_config",
+        resource_type="default_ai_provider_config",
+        resource_id=result["stage"],
+        payload={"stage": stage},
+    )
+    await db.commit()
+    return success_response(result, "default ai config test succeeded")
 
 
 @router.get("/projects/{project_id}/ai-configs")

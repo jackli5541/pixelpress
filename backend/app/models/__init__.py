@@ -1,5 +1,6 @@
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.ai_provider_config import AIProviderConfig
+from app.models.default_ai_provider_config import DefaultAIProviderConfig
 from app.models.album import Album
 from app.models.chapter import Chapter
 from app.models.chapter_photo import ChapterPhoto
@@ -15,6 +16,7 @@ from app.models.user import User
 __all__ = [
     "AdminAuditLog",
     "AIProviderConfig",
+    "DefaultAIProviderConfig",
     "Album",
     "Chapter",
     "ChapterPhoto",

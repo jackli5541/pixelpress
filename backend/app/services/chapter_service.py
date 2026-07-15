@@ -228,6 +228,7 @@ class ChapterService:
                 try:
                     provider_connection = await self.ai_config_service.resolve_for_album(
                         album_id,
+                        stage="chapter",
                         model_hint=settings.ai_model_b2,
                         provider_hint=settings.ai_provider_b2,
                     )

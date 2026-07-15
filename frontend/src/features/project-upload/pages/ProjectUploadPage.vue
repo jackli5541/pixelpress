@@ -117,10 +117,7 @@ const {
             @delete-album="currentAlbum && deleteAlbum(currentAlbum)"
           />
 
-          <ProjectBindingCard
-            :project="currentProject"
-            @delete-project="openDeleteProjectDialog"
-          />
+          <ProjectBindingCard :project="currentProject" />
         </div>
 
         <div v-if="successMessage || errorMessage" class="mt-4 flex flex-col gap-3">

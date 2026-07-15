@@ -83,13 +83,4 @@ async def my_projects(db: AsyncSession = Depends(get_db), user=Depends(get_curre
 
 @users_router.delete("/me/projects/{project_id}")
 async def delete_my_project(project_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
-    service = ProjectService(db)
-    try:
-        result = await service.delete_project_deep(project_id, user_id=user.id, is_admin=user.role == "admin")
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return success_response(result, "project deleted")
+    raise HTTPException(status_code=409, detail="projects are managed by administrators")

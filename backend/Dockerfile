@@ -1,9 +1,9 @@
 ARG PYTHON_BASE_IMAGE=python:3.11-slim
 FROM ${PYTHON_BASE_IMAGE}
 
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG PIP_DEFAULT_TIMEOUT=120
-ARG APT_MIRROR_HOST=mirrors.tuna.tsinghua.edu.cn
+ARG APT_MIRROR_HOST=deb.debian.org
 ARG PLAYWRIGHT_DOWNLOAD_HOST=https://registry.npmmirror.com/-/binary/playwright
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

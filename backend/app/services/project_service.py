@@ -48,9 +48,14 @@ class ProjectService:
         return [self.serialize(item) for item in projects]
 
     async def create_project(self, payload: dict) -> dict:
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise ValueError("project user_id is required")
+        if await self.repo.list_user_projects(user_id):
+            raise ValueError("user already has a project")
         project = await self.repo.create_project(
             {
-                "user_id": payload.get("user_id"),
+                "user_id": user_id,
                 "name": payload["name"],
                 "code": payload.get("code") or await self._next_code(payload["name"]),
                 "status": payload.get("status", "active"),
@@ -100,7 +105,7 @@ class ProjectService:
             return True
         return project.user_id == user_id
 
-    async def delete_project_deep(self, project_id: str, *, user_id: str, is_admin: bool = False) -> dict:
+    async def delete_project_deep(self, project_id: str, *, user_id: str, is_admin: bool = False, force: bool = False) -> dict:
         project = await self.repo.get_project(project_id)
         if project is None:
             raise ValueError("project not found")
@@ -109,10 +114,16 @@ class ProjectService:
             raise RuntimeError("project has running tasks")
 
         albums = await self.album_repo.list_albums_by_project(project_id)
-        if albums:
+        if albums and not force:
             raise RuntimeError("project still contains albums; move or delete those albums first")
 
         try:
+            if force:
+                from app.services.album_service import AlbumService
+
+                album_service = AlbumService(self.session)
+                for album in albums:
+                    await album_service.delete_album_model_deep(album)
             await self.repo.delete_project(project)
             await self.session.commit()
         except Exception:
@@ -121,7 +132,7 @@ class ProjectService:
 
         return {
             "project_id": project_id,
-            "deleted_album_count": 0,
+            "deleted_album_count": len(albums) if force else 0,
             "reassigned_album_count": 0,
             "replacement_project_id": None,
         }

@@ -10,7 +10,7 @@ from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "projects"
 
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
@@ -18,4 +18,3 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user = relationship("User", back_populates="projects")
     albums = relationship("Album", back_populates="project")
     ai_provider_configs = relationship("AIProviderConfig", back_populates="project", cascade="all, delete-orphan")
-
