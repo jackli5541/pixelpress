@@ -68,6 +68,7 @@ if /I "%COMMAND%"=="test-up" goto test_up
 if /I "%COMMAND%"=="test-down" goto test_down
 if /I "%COMMAND%"=="test-logs" goto test_logs
 if /I "%COMMAND%"=="test-ps" goto test_ps
+if /I "%COMMAND%"=="create-admin" goto create_admin
 if /I "%COMMAND%"=="pull" goto pull
 if /I "%COMMAND%"=="help" goto help
 
@@ -275,6 +276,20 @@ set "EXIT_CODE=%ERRORLEVEL%"
 popd
 exit /b %EXIT_CODE%
 
+:create_admin
+if "%~2"=="" (
+  echo Usage: start.bat create-admin USERNAME [PASSWORD]
+  echo Omit PASSWORD to enter it without showing it in the command line.
+  exit /b 2
+)
+call :check_docker || exit /b 1
+pushd "%ROOT%"
+echo Creating administrator account in the production database...
+docker compose --env-file "%COMPOSE_ENV_FILE%" -f "%COMPOSE_FILE%" run --rm --no-deps backend python scripts/create_admin.py "%~2" "%~3"
+set "EXIT_CODE=%ERRORLEVEL%"
+popd
+exit /b %EXIT_CODE%
+
 :help
 echo Usage:
 echo   start.bat           Rebuild from latest code and start the production stack
@@ -289,6 +304,7 @@ echo   start.bat test-up   Start Docker test dependencies
 echo   start.bat test-ps   Show Docker test service status
 echo   start.bat test-logs Tail Docker test service logs
 echo   start.bat test-down Stop and remove Docker test services and volumes
+echo   start.bat create-admin USERNAME [PASSWORD] Create an administrator account
 echo.
 echo Runtime behavior:
 echo   - Reuses backend\.env automatically when present
