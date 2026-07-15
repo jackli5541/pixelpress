@@ -9,6 +9,7 @@ from app.repositories.album_repo import AlbumRepository
 from app.repositories.project_repo import ProjectRepository
 from app.services.project_service import ProjectService
 from app.services.secret_service import SecretService
+from app.services.default_ai_provider_config_service import DefaultAIProviderConfigService
 
 
 class ProjectAIConfigService:
@@ -80,7 +81,7 @@ class ProjectAIConfigService:
         await self.session.commit()
         return self.serialize(updated)
 
-    async def resolve_for_album(self, album_id: str, *, model_hint: str | None = None, provider_hint: str | None = None) -> ProviderConnectionConfig:
+    async def resolve_for_album(self, album_id: str, *, stage: str, model_hint: str | None = None, provider_hint: str | None = None) -> ProviderConnectionConfig:
         album = await self.album_repo.get_album(album_id)
         if album is None:
             raise ValueError("album not found")
@@ -97,6 +98,10 @@ class ProjectAIConfigService:
                     config_id=active.id,
                     project_id=project_id,
                 )
+        default_connection = await DefaultAIProviderConfigService(self.session).resolve(stage)
+        if default_connection is not None:
+            default_connection.project_id = project_id
+            return default_connection
         settings = get_settings()
         return ProviderConnectionConfig(
             provider=provider_hint or "openai_compatible",

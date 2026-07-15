@@ -47,4 +47,4 @@ def test_user_cannot_create_album_under_another_users_project(client):
         headers=other_headers,
     )
     assert response.status_code == 403
-    assert response.json()["detail"] == "project not found or inaccessible"
+    assert response.json()["message"] == "project not found or inaccessible"

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.passwords import hash_password, verify_password
 from app.auth.security import create_access_token
 from app.repositories.user_repo import UserRepository
+from app.services.project_service import ProjectService
 
 
 class AuthService:
@@ -25,6 +26,7 @@ class AuthService:
                 "is_active": True,
             }
         )
+        await ProjectService(self.session).ensure_default_project(user.id)
         await self.session.commit()
         return {"id": user.id, "username": user.username, "role": user.role}
 
@@ -40,6 +42,7 @@ class AuthService:
                 "is_active": True,
             }
         )
+        await ProjectService(self.session).ensure_default_project(user.id)
         await self.session.commit()
         return {"id": user.id, "username": user.username, "role": user.role}
 

@@ -6,7 +6,12 @@ import ChapterClusteringPage from '@/features/chapter-clustering/pages/ChapterCl
 import PagePlanningPage from '@/features/page-planning/pages/PagePlanningPage.vue'
 import ExportOrderPage from '@/features/export-order/pages/ExportOrderPage.vue'
 import LoginPage from '@/features/auth/pages/LoginPage.vue'
+import AdminLayout from '@/modules/admin/AdminLayout.vue'
+import AdminProjectsPage from '@/modules/admin/pages/AdminProjectsPage.vue'
+import AdminProjectFormPage from '@/modules/admin/pages/AdminProjectFormPage.vue'
+import AdminModelsPage from '@/modules/admin/pages/AdminModelsPage.vue'
 import AdminTasksPage from '@/modules/admin/pages/AdminTasksPage.vue'
+import AdminAuditLogsPage from '@/modules/admin/pages/AdminAuditLogsPage.vue'
 import { authResolved, currentUser, loadCurrentUser } from '@/shared/auth'
 import { hasAccessToken } from '@/shared/api/http'
 
@@ -66,31 +71,16 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin',
-    redirect: '/admin/projects',
-  },
-  {
-    path: '/admin/projects',
-    name: 'admin-projects',
-    component: AdminTasksPage,
+    component: AdminLayout,
     meta: { requiresAuth: true, requiresRole: 'admin' },
-  },
-  {
-    path: '/admin/models',
-    name: 'admin-models',
-    component: AdminTasksPage,
-    meta: { requiresAuth: true, requiresRole: 'admin' },
-  },
-  {
-    path: '/admin/audit-logs',
-    name: 'admin-audit-logs',
-    component: AdminTasksPage,
-    meta: { requiresAuth: true, requiresRole: 'admin' },
-  },
-  {
-    path: '/admin/tasks',
-    name: 'admin-tasks',
-    component: AdminTasksPage,
-    meta: { requiresAuth: true, requiresRole: 'admin' },
+    children: [
+      { path: '', redirect: '/admin/projects' },
+      { path: 'projects', name: 'admin-projects', component: AdminProjectsPage },
+      { path: 'projects/:id', name: 'admin-project-detail', component: AdminProjectFormPage },
+      { path: 'models', name: 'admin-models', component: AdminModelsPage },
+      { path: 'audit-logs', name: 'admin-audit-logs', component: AdminAuditLogsPage },
+      { path: 'tasks', name: 'admin-tasks', component: AdminTasksPage },
+    ],
   },
 ]
 

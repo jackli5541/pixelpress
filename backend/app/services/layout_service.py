@@ -325,6 +325,7 @@ class LayoutService:
             if settings.ai_enabled and settings.ai_mode_b3 != "rule":
                 provider_connection = await self.ai_config_service.resolve_for_album(
                     album_id,
+                    stage="layout",
                     model_hint=settings.ai_model_b3,
                     provider_hint=settings.ai_provider_b3,
                 )

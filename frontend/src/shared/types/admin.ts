@@ -51,3 +51,7 @@ export interface AIConfigTestResult {
   debug: Record<string, unknown> | null
   payload: Record<string, unknown> | null
 }
+
+export interface DefaultAIConfigSummary extends Omit<AIConfigSummary, 'project_id' | 'created_by_admin_id' | 'updated_by_admin_id'> {
+  stage: 'chapter' | 'layout'
+}

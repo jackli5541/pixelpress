@@ -6,6 +6,8 @@
 
 - 优先用 `start.bat` 管理容器，不要自己重拼一套启动命令。它统一处理 `compose.prod.yml`、`compose.test.yml` 和运行时环境变量。
 - 后端改动默认落在 `modules -> services -> repositories` 这条链上；不要把业务逻辑直接塞回 `api.py`。
+- 核心流程按阶段拆分，保持 API、Service、Engine、Repository、Storage 职责边界；不要继续堆大文件、大 Service 或大页面。
+- 算法优化优先限制在 Engine 内部，并保持接口字段、任务状态和前端流程契约稳定；契约变化必须同步前后端类型、适配逻辑和测试。
 - 异步任务看 `backend/app/jobs/handlers.py`，真实队列是 ARQ；不要按 README 里的旧 Celery 说法继续扩展。
 - 涉及照片、预览图、导出文件时，统一走 `backend/app/storage/file_store.py` 的存储抽象，不要写死本地文件路径。
 - 改相册流程时，同时检查 `frontend/src/shared/workflow/albumWorkflow.ts`。前端默认流程顺序是 `upload -> cleaning -> chapters -> planning -> export`。
