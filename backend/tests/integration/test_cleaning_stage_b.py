@@ -4,6 +4,7 @@ from io import BytesIO
 
 from PIL import Image
 
+from app.engines.cleaning_engine.local_analyzer import _quality_suggestion
 from app.engines.cleaning_engine.service import MAX_DUPLICATE_CANDIDATES_PER_PHOTO, _candidate_pairs, build_cleaning_result
 from .helpers import create_album, create_auth_headers, run_task_worker, upload_photo
 
@@ -59,6 +60,12 @@ def test_duplicate_candidate_scope_is_bounded_for_large_albums():
     assert max(counts) <= MAX_DUPLICATE_CANDIDATES_PER_PHOTO
 
 
+def test_quality_discard_boundary_requires_two_severe_issues_below_three():
+    assert _quality_suggestion(2.99, 2) == ("remove", 0.9, True)
+    assert _quality_suggestion(3.0, 2) == ("review", 0.75, False)
+    assert _quality_suggestion(2.99, 1) == ("review", 0.75, False)
+
+
 def test_exact_subgroup_auto_excludes_copy_when_near_image_is_group_preferred():
     first = _analysis("a", "0000000000000000")
     copy = _analysis("b", "0000000000000000")
@@ -89,6 +96,27 @@ def test_same_file_size_different_content_is_not_exact_duplicate(client):
     run_task_worker(queued.json()["data"]["task"])
     results = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
     assert all(group["group_type"] != "exact" for group in results["groups"])
+
+
+def test_clear_quality_discard_is_automatic_and_recoverable(client):
+    headers = create_auth_headers(client, username="clean-quality-owner", password="secret", role="user")
+    album = create_album(client, headers, name="Clear Quality Discard")
+    photo = upload_photo(client, headers, album["id"], "unusable.jpg", _jpeg_bytes((0, 0, 0)))
+
+    queued = client.post(f"/api/v1/albums/{album['id']}/clean", headers=headers)
+    run_task_worker(queued.json()["data"]["task"])
+    result = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    analyzed = next(item for item in result["items"] if item["id"] == photo["id"])
+    assert analyzed["cleaning"]["suggestion"] == "remove"
+    assert analyzed["cleaning"]["decision"] == "remove"
+    assert analyzed["cleaning"]["decision_source"] == "system_quality_threshold"
+
+    restored = client.patch(
+        f"/api/v1/albums/{album['id']}/clean/decisions",
+        json={"photo_ids": [photo["id"]], "decision": "keep"},
+        headers=headers,
+    )
+    assert restored.status_code == 200
 
 
 def test_exact_duplicate_auto_exclusion_is_recoverable_and_user_choice_survives_rerun(client):

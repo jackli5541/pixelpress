@@ -169,6 +169,7 @@ def _fallback_analysis(photo_meta: dict[str, Any], version: str) -> dict[str, An
         "quality_score": quality_score,
         "suggestion": "review",
         "confidence": 0.2,
+        "clear_discard": False,
         "issues": ["analysis_failed"],
         "features": {
             "fallback_used": True,
@@ -206,9 +207,13 @@ def build_cleaning_result(
     analyses: list[dict[str, Any]],
     *,
     auto_exclude_exact: bool = True,
+    auto_exclude_quality: bool = False,
 ) -> dict[str, Any]:
     groups: list[dict[str, Any]] = []
-    analyses_by_id = {item["photo_id"]: item for item in analyses}
+    for item in analyses:
+        quality_excluded = bool(auto_exclude_quality and item.get("clear_discard"))
+        item["auto_excluded"] = quality_excluded
+        item["auto_exclusion_source"] = "system_quality_threshold" if quality_excluded else None
     for cluster_indexes in _complete_link_clusters(analyses):
         cluster = [analyses[index] for index in cluster_indexes]
         ranked = sorted(cluster, key=_preferred_sort_key)
@@ -240,19 +245,31 @@ def build_cleaning_result(
             threshold = 1 if relation["type"] == "exact" else NEAR_PHASH_THRESHOLD if relation["type"] == "near" else BURST_PHASH_THRESHOLD
             distance = int(relation.get("distance") or 0)
             confidence_values.append(1.0 if relation["type"] in {"exact", "preferred"} else max(0.0, 1 - distance / max(threshold, 1)))
-            auto_excluded = bool(auto_exclude_exact and exact_copy)
             if is_preferred:
                 item["suggestion"] = "keep"
                 item["confidence"] = max(float(item.get("confidence") or 0), 0.95)
             elif exact_copy:
                 item["suggestion"] = "remove"
                 item["confidence"] = 1.0
+            elif item.get("clear_discard"):
+                item["suggestion"] = "remove"
+                item["confidence"] = max(float(item.get("confidence") or 0), 0.9)
             elif relation["type"] == "near" and distance <= 4 and float(relation.get("histogram_distance") or 1) <= 0.10:
                 item["suggestion"] = "remove"
                 item["confidence"] = 0.9
             else:
                 item["suggestion"] = "review"
                 item["confidence"] = max(float(item.get("confidence") or 0), 0.75)
+            auto_excluded = False
+            auto_exclusion_source = None
+            if not is_preferred and auto_exclude_exact and exact_copy:
+                auto_excluded = True
+                auto_exclusion_source = "system_exact_duplicate"
+            elif not is_preferred and auto_exclude_quality and item.get("clear_discard"):
+                auto_excluded = True
+                auto_exclusion_source = "system_quality_threshold"
+            item["auto_excluded"] = auto_excluded
+            item["auto_exclusion_source"] = auto_exclusion_source
             members.append({
                 "photo_id": item["photo_id"],
                 "relation_type": relation["type"],
@@ -284,10 +301,6 @@ def build_cleaning_result(
             "members": members,
         })
 
-    for group in groups:
-        for member in group["members"]:
-            analyses_by_id[member["photo_id"]]["auto_excluded"] = member["auto_excluded"]
-
     summary = {
         "total": len(analyses),
         "analyzed": sum(not item.get("features", {}).get("fallback_used", False) for item in analyses),
@@ -306,7 +319,14 @@ def detect_duplicates(photos: list[dict[str, Any]]) -> list[list[str]]:
     return [[analyses[index]["photo_id"] for index in cluster] for cluster in _complete_link_clusters(analyses)]
 
 
-def run_cleaning(album_id: str, photo_list: list[dict[str, Any]], *, version: str = "b1-local-v1", auto_exclude_exact: bool = True) -> dict[str, Any]:
+def run_cleaning(
+    album_id: str,
+    photo_list: list[dict[str, Any]],
+    *,
+    version: str = "b1-local-v1",
+    auto_exclude_exact: bool = True,
+    auto_exclude_quality: bool = False,
+) -> dict[str, Any]:
     analyzer = LocalPhotoAnalyzer(version)
     analyses: list[dict[str, Any]] = []
     for photo in photo_list:
@@ -317,4 +337,9 @@ def run_cleaning(album_id: str, photo_list: list[dict[str, Any]], *, version: st
             result = _fallback_analysis(photo, version)
         result.update({"taken_at": photo.get("taken_at"), "device_model": photo.get("device_model"), "uploaded_at": photo.get("uploaded_at")})
         analyses.append(result)
-    return build_cleaning_result(album_id, analyses, auto_exclude_exact=auto_exclude_exact)
+    return build_cleaning_result(
+        album_id,
+        analyses,
+        auto_exclude_exact=auto_exclude_exact,
+        auto_exclude_quality=auto_exclude_quality,
+    )

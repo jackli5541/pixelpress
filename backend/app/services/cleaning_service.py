@@ -139,8 +139,15 @@ class CleaningService:
             await self.runtime.ensure_task_not_cancelled(task_id)
             await self.runtime.heartbeat_step(task_id, "grouping_duplicates", 65)
             rollout_enabled = self._is_rollout_enabled(album_id)
-            auto_exclude = rollout_enabled and settings.cleaning_auto_exclude_mode == "exact_only"
-            result = await asyncio.to_thread(build_cleaning_result, album_id, analyses, auto_exclude_exact=auto_exclude)
+            auto_exclude_exact = rollout_enabled and settings.cleaning_auto_exclude_mode in {"exact_only", "exact_and_clear_quality"}
+            auto_exclude_quality = rollout_enabled and settings.cleaning_auto_exclude_mode == "exact_and_clear_quality"
+            result = await asyncio.to_thread(
+                build_cleaning_result,
+                album_id,
+                analyses,
+                auto_exclude_exact=auto_exclude_exact,
+                auto_exclude_quality=auto_exclude_quality,
+            )
 
             await self.runtime.ensure_task_not_cancelled(task_id)
             await self.runtime.heartbeat_step(task_id, "persisting_results", 80)
@@ -161,7 +168,7 @@ class CleaningService:
                 }
                 if photo.cleaning_decision_source != "user":
                     next_decision = "remove" if item.get("auto_excluded") else None
-                    next_source = "system_exact_duplicate" if next_decision else None
+                    next_source = item.get("auto_exclusion_source") if next_decision else None
                     if photo.cleaning_decision != next_decision:
                         effective_changed = True
                         await self.cleaning_repo.add_decision_event({

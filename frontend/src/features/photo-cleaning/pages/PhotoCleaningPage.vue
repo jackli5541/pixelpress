@@ -116,7 +116,7 @@ const summary = computed(() => results.value?.summary ?? {
   analysis_failures: 0,
 })
 const hasAnalysis = computed(() => Boolean(results.value?.analysis_version))
-const reviewPhotos = computed(() => photos.value.filter((photo) => photo.cleaning.suggestion === 'review' || photo.cleaning.suggestion === 'remove'))
+const reviewPhotos = computed(() => photos.value.filter((photo) => photo.cleaning.decision === null && (photo.cleaning.suggestion === 'review' || photo.cleaning.suggestion === 'remove')))
 const excludedPhotos = computed(() => photos.value.filter((photo) => photo.cleaning.excluded))
 const filteredPhotos = computed(() => {
   const source = viewMode.value === 'review' ? reviewPhotos.value : viewMode.value === 'excluded' ? excludedPhotos.value : photos.value

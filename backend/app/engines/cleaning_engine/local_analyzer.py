@@ -13,6 +13,9 @@ from PIL import Image, ImageOps
 ANALYSIS_MAX_EDGE = 1024
 PHASH_SOURCE_SIZE = 32
 PHASH_HASH_SIZE = 8
+CLEAR_DISCARD_MIN_SEVERE_ISSUES = 2
+CLEAR_DISCARD_SCORE_THRESHOLD = 3.0
+REVIEW_SCORE_THRESHOLD = 5.0
 
 
 @lru_cache(maxsize=1)
@@ -99,6 +102,15 @@ def _color_histogram(rgb: np.ndarray) -> list[float]:
     return values
 
 
+def _quality_suggestion(quality_score: float, severe_count: int) -> tuple[str, float, bool]:
+    clear_discard = severe_count >= CLEAR_DISCARD_MIN_SEVERE_ISSUES and quality_score < CLEAR_DISCARD_SCORE_THRESHOLD
+    if clear_discard:
+        return "remove", 0.9, True
+    if severe_count >= 1 or quality_score < REVIEW_SCORE_THRESHOLD:
+        return "review", 0.75, False
+    return "keep", 0.9, False
+
+
 class LocalPhotoAnalyzer:
     def __init__(self, version: str) -> None:
         self.version = version
@@ -144,15 +156,7 @@ class LocalPhotoAnalyzer:
 
         quality_score = round((sharpness_score * 0.5 + exposure_score * 0.3 + resolution_score * 0.2) * 10, 2)
         severe_count = sum(value == "severe" for value in (sharpness_severity, exposure_severity, resolution_severity))
-        if severe_count >= 2 and quality_score < 3:
-            suggestion = "remove"
-            confidence = 0.9
-        elif severe_count >= 1 or quality_score < 5:
-            suggestion = "review"
-            confidence = 0.75
-        else:
-            suggestion = "keep"
-            confidence = 0.9
+        suggestion, confidence, clear_discard = _quality_suggestion(quality_score, severe_count)
 
         return {
             "photo_id": photo_meta.get("id"),
@@ -162,6 +166,7 @@ class LocalPhotoAnalyzer:
             "quality_score": quality_score,
             "suggestion": suggestion,
             "confidence": confidence,
+            "clear_discard": clear_discard,
             "issues": issues,
             "features": {
                 "sharpness": {"variance": round(sharpness_raw, 3), "score": round(sharpness_score, 4), "severity": sharpness_severity},
