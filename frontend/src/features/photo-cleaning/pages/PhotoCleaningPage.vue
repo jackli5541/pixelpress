@@ -11,6 +11,7 @@ import { useAlbumTaskMonitor } from '@/shared/composables/useAlbumTaskMonitor'
 
 type Suggestion = 'keep' | 'review' | 'remove' | null
 type Decision = 'keep' | 'remove' | null
+type ReviewStatus = 'pending_review' | 'included' | 'kept' | 'removed' | 'unanalyzed'
 type ViewMode = 'duplicates' | 'review' | 'all' | 'excluded'
 
 interface CleaningFeatures {
@@ -32,6 +33,7 @@ interface PhotoItem {
   cleaning_issues?: string[] | null
   cleaning: {
     suggestion: Suggestion
+    review_status: ReviewStatus
     confidence?: number | null
     decision: Decision
     decision_source?: string | null
@@ -71,6 +73,10 @@ interface CleaningResults {
     review: number
     remove: number
     excluded: number
+    pending_review: number
+    included: number
+    kept: number
+    removed: number
     duplicate_groups: number
     analysis_failures: number
   }
@@ -112,11 +118,16 @@ const summary = computed(() => results.value?.summary ?? {
   review: 0,
   remove: 0,
   excluded: 0,
+  pending_review: 0,
+  included: 0,
+  kept: 0,
+  removed: 0,
   duplicate_groups: 0,
   analysis_failures: 0,
 })
 const hasAnalysis = computed(() => Boolean(results.value?.analysis_version))
-const reviewPhotos = computed(() => photos.value.filter((photo) => photo.cleaning.decision === null && (photo.cleaning.suggestion === 'review' || photo.cleaning.suggestion === 'remove')))
+const pendingReviewCount = computed(() => summary.value.pending_review)
+const reviewPhotos = computed(() => photos.value.filter((photo) => photo.cleaning.review_status === 'pending_review'))
 const excludedPhotos = computed(() => photos.value.filter((photo) => photo.cleaning.excluded))
 const filteredPhotos = computed(() => {
   const source = viewMode.value === 'review' ? reviewPhotos.value : viewMode.value === 'excluded' ? excludedPhotos.value : photos.value
@@ -159,6 +170,26 @@ function issueLabel(issue: string) {
 
 function suggestionLabel(suggestion: Suggestion) {
   return suggestion === 'remove' ? '建议移除' : suggestion === 'review' ? '需要复核' : suggestion === 'keep' ? '建议保留' : '待分析'
+}
+
+function reviewStatusLabel(status: ReviewStatus) {
+  return ({
+    pending_review: '需要复核',
+    included: '建议保留',
+    kept: '已确认保留',
+    removed: '已移出',
+    unanalyzed: '待分析',
+  } as Record<ReviewStatus, string>)[status]
+}
+
+function reviewStatusClass(status: ReviewStatus) {
+  return ({
+    pending_review: 'bg-[#956d32]',
+    included: 'bg-[#4f7048]',
+    kept: 'bg-[#5b714d]',
+    removed: 'bg-[#9b4e43]',
+    unanalyzed: 'bg-[#78695c]',
+  } as Record<ReviewStatus, string>)[status]
 }
 
 function toggleSelect(photoId: string) {
@@ -275,6 +306,11 @@ async function undoLastAction() {
 }
 
 function goNext() {
+  if (pendingReviewCount.value) {
+    viewMode.value = 'review'
+    errorMessage.value = `请先处理剩余 ${pendingReviewCount.value} 张待复核照片`
+    return
+  }
   void router.push(`/albums/${albumId.value}/chapters`)
 }
 
@@ -307,9 +343,10 @@ watch(albumId, async () => {
           <button class="story-button inline-flex items-center gap-2 px-5 py-2.5 text-sm" :disabled="actionLoading || !photos.length" @click="startCleaning">
             <ScanSearch :size="17" /> {{ actionLoading ? '处理中' : hasAnalysis ? '重新分析' : '开始分析' }}
           </button>
-          <button class="story-button-secondary inline-flex items-center gap-2 px-5 py-2.5 text-sm" :disabled="!photos.length" @click="goNext">
+          <button class="story-button-secondary inline-flex items-center gap-2 px-5 py-2.5 text-sm" :disabled="!photos.length || Boolean(pendingReviewCount)" :title="pendingReviewCount ? `还需复核 ${pendingReviewCount} 张照片` : undefined" @click="goNext">
             进入分章 <ChevronRight :size="17" />
           </button>
+          <span v-if="pendingReviewCount" class="self-center text-xs text-[var(--story-muted)]">还需复核 {{ pendingReviewCount }} 张</span>
         </div>
       </div>
 
@@ -321,7 +358,7 @@ watch(albumId, async () => {
           <span class="block text-2xl text-white">{{ summary.duplicate_groups }}</span><span class="text-xs text-[var(--story-muted)]">重复组</span>
         </button>
         <button class="bg-[rgba(24,20,18,0.92)] px-4 py-4 text-left" @click="viewMode = 'review'">
-          <span class="block text-2xl text-[#e7b56e]">{{ summary.review + summary.remove }}</span><span class="text-xs text-[var(--story-muted)]">待复核</span>
+          <span class="block text-2xl text-[#e7b56e]">{{ summary.pending_review }}</span><span class="text-xs text-[var(--story-muted)]">待复核</span>
         </button>
         <button class="bg-[rgba(24,20,18,0.92)] px-4 py-4 text-left" @click="viewMode = 'excluded'">
           <span class="block text-2xl text-[#dc8b7e]">{{ summary.excluded }}</span><span class="text-xs text-[var(--story-muted)]">已移出</span>
@@ -395,7 +432,7 @@ watch(albumId, async () => {
             <div class="relative aspect-[4/3] bg-[#eee9e3]">
               <ProtectedImage :src="photo.url" :alt="photo.filename" class="h-full w-full object-cover" :class="photo.cleaning.excluded ? 'opacity-55 grayscale' : ''" />
               <label class="absolute left-2 top-2 flex size-8 items-center justify-center rounded bg-white/90 shadow"><input type="checkbox" :checked="selectedIds.has(photo.id)" @change="toggleSelect(photo.id)" /></label>
-              <span class="absolute right-2 top-2 rounded px-2 py-1 text-xs text-white" :class="photo.cleaning.suggestion === 'remove' ? 'bg-[#9b4e43]' : photo.cleaning.suggestion === 'review' ? 'bg-[#956d32]' : 'bg-[#4f7048]'">{{ suggestionLabel(photo.cleaning.suggestion) }}</span>
+              <span class="absolute right-2 top-2 rounded px-2 py-1 text-xs text-white" :class="reviewStatusClass(photo.cleaning.review_status)">{{ reviewStatusLabel(photo.cleaning.review_status) }}</span>
             </div>
             <div class="space-y-3 p-4">
               <div><p class="truncate text-sm font-semibold text-[#241c16]">{{ photo.filename }}</p><p class="mt-1 text-xs text-[#78695c]">{{ formatFileSize(photo.size) }} · {{ photo.width }}×{{ photo.height }}</p></div>
@@ -406,9 +443,10 @@ watch(albumId, async () => {
                 <div class="border-l py-2"><b class="block text-sm text-[#241c16]">{{ formatPercent(photo.cleaning.features?.resolution?.score) }}</b>分辨率</div>
               </div>
               <div v-if="photo.cleaning_issues?.length" class="flex flex-wrap gap-1.5"><span v-for="issue in photo.cleaning_issues" :key="issue" class="rounded bg-[#f3e5cf] px-2 py-1 text-xs text-[#815e2d]">{{ issueLabel(issue) }}</span></div>
+              <p v-if="photo.cleaning.decision !== null && photo.cleaning.suggestion" class="text-xs text-[#78695c]">算法建议：{{ suggestionLabel(photo.cleaning.suggestion) }}</p>
               <div class="flex gap-2">
                 <button v-if="photo.cleaning.excluded" class="story-button-secondary inline-flex flex-1 items-center justify-center gap-1 px-3 py-2 text-xs" @click="applyDecision([photo.id], 'keep', '照片已恢复')"><RotateCcw :size="14" /> 恢复</button>
-                <template v-else><button class="story-button-secondary flex-1 px-3 py-2 text-xs" @click="applyDecision([photo.id], 'keep', '已确认保留')">确认保留</button><button class="rounded-md bg-[#f1d8d2] px-3 py-2 text-xs text-[#8b4339]" @click="applyDecision([photo.id], 'remove', '照片已移出')">移出</button></template>
+                <template v-else><button class="story-button-secondary flex-1 px-3 py-2 text-xs" :disabled="photo.cleaning.review_status === 'kept'" @click="applyDecision([photo.id], 'keep', '已确认保留')">{{ photo.cleaning.review_status === 'kept' ? '已确认保留' : '确认保留' }}</button><button class="rounded-md bg-[#f1d8d2] px-3 py-2 text-xs text-[#8b4339]" @click="applyDecision([photo.id], 'remove', '照片已移出')">移出</button></template>
               </div>
             </div>
           </article>

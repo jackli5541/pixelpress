@@ -17,6 +17,7 @@ from app.repositories.cleaning_repo import CleaningRepository
 from app.repositories.photo_repo import PhotoRepository
 from app.repositories.task_repo import TaskRepository
 from app.services.render_artifact_service import RenderArtifactService, clear_render_artifacts
+from app.services.photo_selection import get_photo_review_status
 from app.services.serializers import serialize_album, serialize_photo
 from app.services.task_runtime_service import TaskRuntimeService
 from app.services.task_service import TaskService
@@ -273,6 +274,10 @@ class CleaningService:
                 "review": sum(photo.cleaning_suggestion == "review" for photo in photos),
                 "remove": sum(photo.cleaning_suggestion == "remove" for photo in photos),
                 "excluded": sum(photo.cleaning_decision == "remove" for photo in photos),
+                "pending_review": sum(get_photo_review_status(photo) == "pending_review" for photo in photos),
+                "included": sum(get_photo_review_status(photo) == "included" for photo in photos),
+                "kept": sum(get_photo_review_status(photo) == "kept" for photo in photos),
+                "removed": sum(get_photo_review_status(photo) == "removed" for photo in photos),
                 "duplicate_groups": len(groups),
                 "analysis_failures": sum("analysis_failed" in (photo.cleaning_issues or []) for photo in photos),
             },

@@ -56,4 +56,5 @@ backend/tmp_*.py
 测试例子/
 测试例子2/
 测试例子.zip
+需求文档.md
 tmp_verify_auth/

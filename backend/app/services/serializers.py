@@ -10,7 +10,7 @@ from app.models.export import Export
 from app.models.page import Page
 from app.models.photo import Photo
 from app.models.task import Task
-from app.services.photo_selection import is_photo_included
+from app.services.photo_selection import get_photo_review_status, is_photo_included
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -91,6 +91,7 @@ def serialize_photo(photo: Photo) -> dict[str, Any]:
         "cleaning_issues": photo.cleaning_issues,
         "cleaning": {
             "suggestion": photo.cleaning_suggestion,
+            "review_status": get_photo_review_status(photo),
             "confidence": photo.cleaning_confidence,
             "decision": photo.cleaning_decision,
             "decision_source": photo.cleaning_decision_source,
