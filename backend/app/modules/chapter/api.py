@@ -9,7 +9,7 @@ from app.core.rate_limit import limiter
 from app.auth.ownership import require_album_access
 from app.common.responses import success_response
 from app.db.session import get_db
-from app.services.chapter_service import ChapterService
+from app.services.chapter_service import ChapterService, PendingPhotoReviewError
 from app.services.task_service import TaskConflictError
 
 router = APIRouter(prefix="/albums/{album_id}", tags=["chapters"])
@@ -41,6 +41,11 @@ async def cluster_chapters(request: Request, album_id: str, db: AsyncSession = D
     await require_album_access(db, user, album_id)
     try:
         task = await ChapterService(db).request_cluster_chapters(album_id, user.id)
+    except PendingPhotoReviewError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "pending photo review", "pending_review_count": exc.pending_review_count},
+        ) from exc
     except TaskConflictError as exc:
         raise HTTPException(status_code=409, detail={"message": "active task exists", "task": exc.task}) from exc
     if task is None:

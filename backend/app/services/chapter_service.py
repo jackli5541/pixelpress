@@ -14,7 +14,7 @@ from app.repositories.chapter_repo import ChapterRepository
 from app.repositories.photo_repo import PhotoRepository
 from app.repositories.task_repo import TaskRepository
 from app.services.project_ai_config_service import ProjectAIConfigService
-from app.services.photo_selection import is_photo_included
+from app.services.photo_selection import is_photo_included, requires_photo_review
 from app.services.render_artifact_service import RenderArtifactService, clear_render_artifacts
 from app.services.serializers import serialize_chapter
 from app.services.task_runtime_service import TaskRuntimeService
@@ -24,6 +24,12 @@ PIPELINE_NAME = "chaptering"
 PIPELINE_VERSION = "p0-async-v1"
 TASK_TYPE = "cluster_chapters"
 JOB_NAME = "run_cluster_chapters_job"
+
+
+class PendingPhotoReviewError(Exception):
+    def __init__(self, pending_review_count: int) -> None:
+        self.pending_review_count = pending_review_count
+        super().__init__(f"{pending_review_count} photos require review")
 
 
 class ChapterService:
@@ -171,6 +177,10 @@ class ChapterService:
         album = await self.album_repo.get_album(album_id)
         if album is None:
             return None
+        photos = await self.photo_repo.list_photos(album_id)
+        pending_review_count = sum(requires_photo_review(photo) for photo in photos)
+        if pending_review_count:
+            raise PendingPhotoReviewError(pending_review_count)
         return await self.task_service.request_task(
             album_id=album_id,
             user_id=user_id,
@@ -197,6 +207,16 @@ class ChapterService:
             await self.runtime.ensure_revision_matches(task_id, album.content_revision)
             await self.runtime.heartbeat_step(task_id, "loading_photos", 10)
             photos = await self.photo_repo.list_photos(album_id)
+            pending_review_count = sum(requires_photo_review(photo) for photo in photos)
+            if pending_review_count:
+                await self.task_service.complete_failure(
+                    task_id,
+                    error_code="pending_photo_review",
+                    error_message=f"{pending_review_count} photos require review",
+                    retryable=False,
+                )
+                await self.session.commit()
+                return None
             keep_photos = [photo for photo in photos if is_photo_included(photo)]
             if not keep_photos:
                 album.status = AlbumStatus.CLUSTERED
