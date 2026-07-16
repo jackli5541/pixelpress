@@ -75,7 +75,14 @@ def run_task_worker(task: dict) -> None:
     task_type = task["task_type"]
     params = task.get("task_params") or {}
     if task_type == "clean_photos":
-        asyncio.run(run_cleaning_job({}, task["id"], task["album_id"]))
+        asyncio.run(
+            run_cleaning_job(
+                {},
+                task["id"],
+                task["album_id"],
+                pipeline_version=params.get("pipeline_version"),
+            )
+        )
         return
     if task_type == "cluster_chapters":
         asyncio.run(run_cluster_chapters_job({}, task["id"], task["album_id"]))

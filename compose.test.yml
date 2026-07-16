@@ -56,6 +56,10 @@ services:
       RATE_LIMIT_UPLOAD: 1000/minute
       RATE_LIMIT_TASK_TRIGGER: 1000/minute
       RATE_LIMIT_EXPORT: 1000/minute
+      CLEANING_PIPELINE_VERSION: b1-local-v1
+      CLEANING_ANALYSIS_MAX_PARALLEL: 3
+      CLEANING_ROLLOUT_PERCENT: 100
+      CLEANING_AUTO_EXCLUDE_MODE: exact_and_clear_quality
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic

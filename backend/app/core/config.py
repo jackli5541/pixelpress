@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     ai_image_max_edge: int = 1800
     ai_debug_persist: bool = True
     run_live_ai_tests: bool = False
+    cleaning_pipeline_version: str = "b1-local-v1"
+    cleaning_analysis_max_parallel: int = 3
+    cleaning_rollout_percent: int = 100
+    cleaning_auto_exclude_mode: str = "exact_and_clear_quality"
     observability_log_level: str = "INFO"
     observability_json_logs: bool = True
     sentry_dsn: str | None = None
@@ -119,6 +123,12 @@ class Settings(BaseSettings):
             raise ValueError("UPLOAD_MAX_IMAGE_PIXELS must be positive")
         if self.upload_max_files_per_request <= 0:
             raise ValueError("UPLOAD_MAX_FILES_PER_REQUEST must be positive")
+        if self.cleaning_analysis_max_parallel <= 0:
+            raise ValueError("CLEANING_ANALYSIS_MAX_PARALLEL must be positive")
+        if not 0 <= self.cleaning_rollout_percent <= 100:
+            raise ValueError("CLEANING_ROLLOUT_PERCENT must be between 0 and 100")
+        if self.cleaning_auto_exclude_mode not in {"off", "exact_only", "exact_and_clear_quality"}:
+            raise ValueError("CLEANING_AUTO_EXCLUDE_MODE must be off, exact_only, or exact_and_clear_quality")
         if self.auth_login_max_failures <= 0:
             raise ValueError("AUTH_LOGIN_MAX_FAILURES must be positive")
         if self.auth_login_lockout_seconds <= 0:

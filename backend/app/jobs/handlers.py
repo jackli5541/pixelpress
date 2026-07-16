@@ -29,13 +29,19 @@ async def _claim_task(session, task_id: str, worker_name: str):
     return task
 
 
-async def run_cleaning_job(ctx, task_id: str, album_id: str, request_id: str | None = None) -> None:  # noqa: ANN001
+async def run_cleaning_job(
+    ctx,
+    task_id: str,
+    album_id: str,
+    request_id: str | None = None,
+    pipeline_version: str | None = None,
+) -> None:  # noqa: ANN001
     _bind_worker_context(task_id=task_id, album_id=album_id, request_id=request_id, worker_name="arq-cleaning")
     async with db_session.AsyncSessionFactory() as session:
         if await _claim_task(session, task_id, "arq-cleaning") is None:
             return
         await WorkflowGuardService(session).acquire_album_guard(album_id)
-        await CleaningService(session).execute_cleaning(task_id, album_id)
+        await CleaningService(session).execute_cleaning(task_id, album_id, pipeline_version=pipeline_version)
 
 
 async def run_cluster_chapters_job(ctx, task_id: str, album_id: str, request_id: str | None = None) -> None:  # noqa: ANN001

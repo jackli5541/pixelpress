@@ -1,134 +1,345 @@
-"""照片清洗引擎 —— 基础逻辑版（不依赖 AI）。
+from __future__ import annotations
 
-对相册中每张照片进行基础质量评估：
-- 从文件元数据提取尺寸、大小信息
-- 检测明显异常（文件过小、尺寸异常）
-- 生成 quality_score（0-10）和 recommendation（keep / remove）
-"""
-
+from datetime import datetime
 from typing import Any
 
-# 阈值常量
-MIN_FILE_SIZE_BYTES = 10 * 1024       # 10 KB —— 过小可能是缩略图/损坏
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50 MB
-MIN_DIMENSION = 100                     # 最小边长
-LOW_RES_THRESHOLD = 800                 # 低于此值视为低分辨率
+from app.engines.cleaning_engine.local_analyzer import LocalPhotoAnalyzer
+
+NEAR_PHASH_THRESHOLD = 6
+BURST_PHASH_THRESHOLD = 12
+NEAR_ASPECT_THRESHOLD = 0.02
+BURST_ASPECT_THRESHOLD = 0.05
+NEAR_HISTOGRAM_THRESHOLD = 0.20
+BURST_HISTOGRAM_THRESHOLD = 0.30
+BURST_WINDOW_MS = 3000
+PHASH_BAND_BITS = 5
+PHASH_BUCKET_WINDOW = 8
+MAX_DUPLICATE_CANDIDATES_PER_PHOTO = 64
+MAX_COMPLETE_LINK_CLUSTER_SIZE = 64
+
+
+def phash_distance(left: str | None, right: str | None) -> int | None:
+    if not left or not right:
+        return None
+    return (int(left, 16) ^ int(right, 16)).bit_count()
+
+
+def histogram_distance(left: list[float] | None, right: list[float] | None) -> float | None:
+    if not left or not right or len(left) != len(right):
+        return None
+    return sum(abs(a - b) for a, b in zip(left, right, strict=True)) / 6
+
+
+def _time_delta_ms(left: Any, right: Any) -> int | None:
+    if not isinstance(left, datetime) or not isinstance(right, datetime):
+        return None
+    return int(abs((left - right).total_seconds()) * 1000)
+
+
+def _aspect_delta(left: dict[str, Any], right: dict[str, Any]) -> float:
+    a = float(left.get("features", {}).get("composition", {}).get("aspect_ratio") or 0)
+    b = float(right.get("features", {}).get("composition", {}).get("aspect_ratio") or 0)
+    if not a or not b:
+        return 1.0
+    return abs(a - b) / max(a, b)
+
+
+def _pair_relation(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any] | None:
+    distance = phash_distance(left.get("perceptual_hash"), right.get("perceptual_hash"))
+    histogram = histogram_distance(
+        left.get("features", {}).get("color_histogram"),
+        right.get("features", {}).get("color_histogram"),
+    )
+    aspect = _aspect_delta(left, right)
+    time_delta = _time_delta_ms(left.get("taken_at"), right.get("taken_at"))
+    if left.get("content_sha256") and left.get("content_sha256") == right.get("content_sha256"):
+        return {"type": "exact", "distance": distance or 0, "histogram_distance": histogram or 0.0, "aspect_delta": aspect, "time_delta_ms": time_delta}
+    if distance is None or histogram is None:
+        return None
+    if distance <= NEAR_PHASH_THRESHOLD and aspect <= NEAR_ASPECT_THRESHOLD and histogram <= NEAR_HISTOGRAM_THRESHOLD:
+        return {"type": "near", "distance": distance, "histogram_distance": histogram, "aspect_delta": aspect, "time_delta_ms": time_delta}
+    same_device = not left.get("device_model") or not right.get("device_model") or left.get("device_model") == right.get("device_model")
+    if (
+        time_delta is not None
+        and time_delta <= BURST_WINDOW_MS
+        and same_device
+        and distance <= BURST_PHASH_THRESHOLD
+        and aspect <= BURST_ASPECT_THRESHOLD
+        and histogram <= BURST_HISTOGRAM_THRESHOLD
+    ):
+        return {"type": "burst", "distance": distance, "histogram_distance": histogram, "aspect_delta": aspect, "time_delta_ms": time_delta}
+    return None
+
+
+def _candidate_pairs(items: list[dict[str, Any]]) -> set[tuple[int, int]]:
+    buckets: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for index, item in enumerate(items):
+        phash = item.get("perceptual_hash")
+        if not phash:
+            continue
+        value = int(phash, 16)
+        for offset in range(0, 64, PHASH_BAND_BITS):
+            width = min(PHASH_BAND_BITS, 64 - offset)
+            band = (value >> offset) & ((1 << width) - 1)
+            buckets.setdefault((offset, band), []).append((value, index))
+
+    pairs: set[tuple[int, int]] = set()
+    candidate_counts = [0] * len(items)
+
+    def add_pair(left: int, right: int) -> None:
+        key = (min(left, right), max(left, right))
+        if key in pairs:
+            return
+        left_hash = items[key[0]].get("content_sha256")
+        if left_hash and left_hash == items[key[1]].get("content_sha256"):
+            return
+        if any(candidate_counts[index] >= MAX_DUPLICATE_CANDIDATES_PER_PHOTO for index in key):
+            return
+        pairs.add(key)
+        candidate_counts[key[0]] += 1
+        candidate_counts[key[1]] += 1
+
+    for bucket in buckets.values():
+        bucket.sort()
+        for position, (_, left) in enumerate(bucket):
+            for _, right in bucket[position + 1:position + 1 + PHASH_BUCKET_WINDOW]:
+                add_pair(left, right)
+    return pairs
+
+
+def _initial_clusters(items: list[dict[str, Any]]) -> list[set[int]]:
+    exact_groups: dict[str, set[int]] = {}
+    for index, item in enumerate(items):
+        content_hash = item.get("content_sha256")
+        if content_hash:
+            exact_groups.setdefault(content_hash, set()).add(index)
+
+    clusters = [group for group in exact_groups.values() if len(group) >= 2]
+    assigned = set().union(*clusters) if clusters else set()
+    clusters.extend({index} for index in range(len(items)) if index not in assigned)
+    return clusters
+
+
+def _complete_link_clusters(items: list[dict[str, Any]]) -> list[list[int]]:
+    candidate_pairs = _candidate_pairs(items)
+    relation_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
+
+    def relation(a: int, b: int) -> dict[str, Any] | None:
+        key = (min(a, b), max(a, b))
+        if key not in relation_cache:
+            relation_cache[key] = _pair_relation(items[key[0]], items[key[1]]) if key in candidate_pairs else None
+        return relation_cache[key]
+
+    edges: list[tuple[int, int, int]] = []
+    for left, right in candidate_pairs:
+        pair = relation(left, right)
+        if pair is not None:
+            priority = 0 if pair["type"] == "exact" else 1 if pair["type"] == "near" else 2
+            edges.append((priority * 100 + int(pair["distance"]), left, right))
+    edges.sort()
+
+    clusters = _initial_clusters(items)
+    cluster_by_item = {index: cluster for cluster in clusters for index in cluster}
+    for _, left, right in edges:
+        left_cluster = cluster_by_item[left]
+        right_cluster = cluster_by_item[right]
+        if left_cluster is right_cluster:
+            continue
+        if len(left_cluster) + len(right_cluster) > MAX_COMPLETE_LINK_CLUSTER_SIZE:
+            continue
+        if all(relation(a, b) is not None for a in left_cluster for b in right_cluster):
+            left_cluster.update(right_cluster)
+            for index in right_cluster:
+                cluster_by_item[index] = left_cluster
+            right_cluster.clear()
+    return [sorted(cluster) for cluster in clusters if len(cluster) >= 2]
+
+
+def _fallback_analysis(photo_meta: dict[str, Any], version: str) -> dict[str, Any]:
+    width = int(photo_meta.get("width") or 0)
+    height = int(photo_meta.get("height") or 0)
+    min_side = min(width, height) if width and height else 0
+    resolution_score = min(1.0, min_side / 1600) if min_side else 0.0
+    quality_score = round((0.5 + 0.3 + 0.2 * resolution_score) * 10, 2)
+    return {
+        "photo_id": photo_meta.get("id"),
+        "content_sha256": None,
+        "perceptual_hash": None,
+        "analysis_version": version,
+        "quality_score": quality_score,
+        "suggestion": "review",
+        "confidence": 0.2,
+        "clear_discard": False,
+        "issues": ["analysis_failed"],
+        "features": {
+            "fallback_used": True,
+            "resolution": {"width": width, "height": height, "min_side": min_side, "score": round(resolution_score, 4), "severity": "warning"},
+            "composition": {"orientation": "unknown", "aspect_ratio": round(width / height, 5) if height else None},
+        },
+    }
+
+
+def fallback_analysis(photo_meta: dict[str, Any], version: str) -> dict[str, Any]:
+    return _fallback_analysis(photo_meta, version)
 
 
 def analyze_photo_quality(photo_meta: dict[str, Any]) -> dict[str, Any]:
-    """分析单张照片的质量并返回评分与标签。
-
-    当前使用基于规则的评估（无需 AI），后续可接入 DeepSeek V4 Pro 增强。
-
-    Returns:
-        dict: quality_score（0-10）、tags、recommendation、issues。
-    """
-    issues: list[str] = []
-    tags: list[str] = []
-    score = 7.0  # 默认基础分
-
-    file_size = photo_meta.get("size", 0)
-    width = photo_meta.get("width") or 0
-    height = photo_meta.get("height") or 0
-    content_type = photo_meta.get("content_type", "")
-
-    # 文件大小检查
-    if file_size < MIN_FILE_SIZE_BYTES:
-        issues.append("file_too_small")
-        score -= 4.0
-    elif file_size < 50 * 1024:
-        score -= 1.0
-        tags.append("low_size")
-
-    if file_size > MAX_FILE_SIZE_BYTES:
-        tags.append("high_resolution")
-
-    # 分辨率检查
-    min_side = min(width, height) if width and height else 0
-    if min_side > 0 and min_side < MIN_DIMENSION:
-        issues.append("resolution_too_low")
-        score -= 4.0
-    elif 0 < min_side < LOW_RES_THRESHOLD:
-        score -= 1.0
-        tags.append("low_resolution")
-
-    if width > 3000 or height > 3000:
-        tags.append("high_resolution")
-
-    # 格式标签
-    if "png" in content_type:
-        tags.append("png_format")
-    elif "webp" in content_type:
-        tags.append("webp_format")
-
-    # 评分钳制
-    score = max(0.0, min(10.0, round(score, 1)))
-
-    # 推荐决策
-    if score < 3.0:
-        recommendation = "remove"
-        tags.append("suggest_remove")
-    else:
-        recommendation = "keep"
-
+    result = _fallback_analysis(photo_meta, "metadata-fallback-v1")
     return {
-        "photo_id": photo_meta.get("id"),
-        "quality_score": score,
-        "tags": tags,
-        "issues": issues,
-        "recommendation": recommendation,
+        "photo_id": result["photo_id"],
+        "quality_score": result["quality_score"],
+        "tags": [],
+        "issues": result["issues"],
+        "recommendation": result["suggestion"],
     }
+
+
+def _preferred_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    resolution = item.get("features", {}).get("resolution", {})
+    pixels = int(resolution.get("width") or 0) * int(resolution.get("height") or 0)
+    uploaded_at = item.get("uploaded_at")
+    uploaded_key = uploaded_at.timestamp() if isinstance(uploaded_at, datetime) else float("inf")
+    return (-float(item.get("quality_score") or 0), -pixels, uploaded_key, str(item.get("photo_id")))
+
+
+def build_cleaning_result(
+    album_id: str,
+    analyses: list[dict[str, Any]],
+    *,
+    auto_exclude_exact: bool = True,
+    auto_exclude_quality: bool = False,
+) -> dict[str, Any]:
+    groups: list[dict[str, Any]] = []
+    for item in analyses:
+        quality_excluded = bool(auto_exclude_quality and item.get("clear_discard"))
+        item["auto_excluded"] = quality_excluded
+        item["auto_exclusion_source"] = "system_quality_threshold" if quality_excluded else None
+    for cluster_indexes in _complete_link_clusters(analyses):
+        cluster = [analyses[index] for index in cluster_indexes]
+        ranked = sorted(cluster, key=_preferred_sort_key)
+        preferred = ranked[0]
+        exact_hashes = [item.get("content_sha256") for item in cluster if item.get("content_sha256")]
+        pair_types = {"exact"} if len(exact_hashes) != len(set(exact_hashes)) else set()
+        pair_types.update(
+            relation["type"]
+            for item in cluster
+            if item is not preferred and (relation := _pair_relation(preferred, item)) is not None
+        )
+        group_type = next(iter(pair_types)) if len(pair_types) == 1 else "mixed"
+        members: list[dict[str, Any]] = []
+        confidence_values: list[float] = []
+        exact_canonical: dict[str, dict[str, Any]] = {}
+        for item in ranked:
+            content_hash = item.get("content_sha256")
+            if content_hash and content_hash not in exact_canonical:
+                exact_canonical[content_hash] = item
+        for rank, item in enumerate(ranked, 1):
+            is_preferred = item["photo_id"] == preferred["photo_id"]
+            relation = {"type": "preferred", "distance": 0, "time_delta_ms": 0, "histogram_distance": 0.0, "aspect_delta": 0.0}
+            if not is_preferred:
+                relation = _pair_relation(preferred, item) or relation
+            content_hash = item.get("content_sha256")
+            exact_copy = bool(content_hash and exact_canonical[content_hash]["photo_id"] != item["photo_id"])
+            if exact_copy:
+                relation = _pair_relation(exact_canonical[content_hash], item) or relation
+            threshold = 1 if relation["type"] == "exact" else NEAR_PHASH_THRESHOLD if relation["type"] == "near" else BURST_PHASH_THRESHOLD
+            distance = int(relation.get("distance") or 0)
+            confidence_values.append(1.0 if relation["type"] in {"exact", "preferred"} else max(0.0, 1 - distance / max(threshold, 1)))
+            if is_preferred:
+                item["suggestion"] = "keep"
+                item["confidence"] = max(float(item.get("confidence") or 0), 0.95)
+            elif exact_copy:
+                item["suggestion"] = "remove"
+                item["confidence"] = 1.0
+            elif item.get("clear_discard"):
+                item["suggestion"] = "remove"
+                item["confidence"] = max(float(item.get("confidence") or 0), 0.9)
+            elif relation["type"] == "near" and distance <= 4 and float(relation.get("histogram_distance") or 1) <= 0.10:
+                item["suggestion"] = "remove"
+                item["confidence"] = 0.9
+            else:
+                item["suggestion"] = "review"
+                item["confidence"] = max(float(item.get("confidence") or 0), 0.75)
+            auto_excluded = False
+            auto_exclusion_source = None
+            if not is_preferred and auto_exclude_exact and exact_copy:
+                auto_excluded = True
+                auto_exclusion_source = "system_exact_duplicate"
+            elif not is_preferred and auto_exclude_quality and item.get("clear_discard"):
+                auto_excluded = True
+                auto_exclusion_source = "system_quality_threshold"
+            item["auto_excluded"] = auto_excluded
+            item["auto_exclusion_source"] = auto_exclusion_source
+            members.append({
+                "photo_id": item["photo_id"],
+                "relation_type": relation["type"],
+                "hamming_distance": distance,
+                "burst_time_delta_ms": relation.get("time_delta_ms"),
+                "preferred_score": item["quality_score"],
+                "rank": rank,
+                "is_preferred": is_preferred,
+                "auto_excluded": auto_excluded,
+                "factors": {
+                    "histogram_distance": round(float(relation.get("histogram_distance") or 0), 4),
+                    "aspect_delta": round(float(relation.get("aspect_delta") or 0), 4),
+                    "sharpness": item.get("features", {}).get("sharpness", {}).get("score"),
+                    "exposure": item.get("features", {}).get("exposure", {}).get("score"),
+                    "resolution": item.get("features", {}).get("resolution", {}).get("score"),
+                },
+            })
+        groups.append({
+            "group_type": group_type,
+            "confidence": round(sum(confidence_values) / max(1, len(confidence_values)), 4),
+            "preferred_photo_id": preferred["photo_id"],
+            "thresholds": {
+                "near_phash": NEAR_PHASH_THRESHOLD,
+                "burst_phash": BURST_PHASH_THRESHOLD,
+                "near_aspect_delta": NEAR_ASPECT_THRESHOLD,
+                "burst_window_ms": BURST_WINDOW_MS,
+            },
+            "explanation": {"algorithm": "complete_link", "member_count": len(members)},
+            "members": members,
+        })
+
+    summary = {
+        "total": len(analyses),
+        "analyzed": sum(not item.get("features", {}).get("fallback_used", False) for item in analyses),
+        "keep": sum(item["suggestion"] == "keep" for item in analyses),
+        "review": sum(item["suggestion"] == "review" for item in analyses),
+        "remove": sum(item["suggestion"] == "remove" for item in analyses),
+        "auto_excluded": sum(bool(item.get("auto_excluded")) for item in analyses),
+        "duplicate_groups": len(groups),
+        "analysis_failures": sum(bool(item.get("features", {}).get("fallback_used")) for item in analyses),
+    }
+    return {"album_id": album_id, "summary": summary, "groups": groups, "per_photo": analyses}
 
 
 def detect_duplicates(photos: list[dict[str, Any]]) -> list[list[str]]:
-    """基于文件大小 + 文件名相似度检测重复组。
-
-    当前为简化实现：相同文件大小且文件名相似的归为一组。
-    后续可接入感知哈希（pHash）做精确检测。
-
-    Returns:
-        list[list[str]]: 每组重复照片的 ID 列表。
-    """
-    size_groups: dict[int, list[dict[str, Any]]] = {}
-    for p in photos:
-        size_groups.setdefault(p.get("size", 0), []).append(p)
-
-    duplicate_groups: list[list[str]] = []
-    for group in size_groups.values():
-        if len(group) >= 2:
-            duplicate_groups.append([p["id"] for p in group])
-
-    return duplicate_groups
+    analyses = [photo for photo in photos if photo.get("content_sha256") or photo.get("perceptual_hash")]
+    return [[analyses[index]["photo_id"] for index in cluster] for cluster in _complete_link_clusters(analyses)]
 
 
-def run_cleaning(album_id: str, photo_list: list[dict[str, Any]]) -> dict[str, Any]:
-    """对相册的全部照片执行清洗分析。
-
-    Returns:
-        dict: summary（总数/建议保留/建议删除/重复组）+ per_photo 详情。
-    """
-    per_photo: list[dict[str, Any]] = []
-    keep_count = 0
-    remove_count = 0
-
+def run_cleaning(
+    album_id: str,
+    photo_list: list[dict[str, Any]],
+    *,
+    version: str = "b1-local-v1",
+    auto_exclude_exact: bool = True,
+    auto_exclude_quality: bool = False,
+) -> dict[str, Any]:
+    analyzer = LocalPhotoAnalyzer(version)
+    analyses: list[dict[str, Any]] = []
     for photo in photo_list:
-        result = analyze_photo_quality(photo)
-        per_photo.append(result)
-        if result["recommendation"] == "keep":
-            keep_count += 1
-        else:
-            remove_count += 1
-
-    duplicates = detect_duplicates(photo_list)
-
-    return {
-        "album_id": album_id,
-        "summary": {
-            "total": len(photo_list),
-            "keep": keep_count,
-            "remove": remove_count,
-            "duplicate_groups": len(duplicates),
-        },
-        "duplicates": duplicates,
-        "per_photo": per_photo,
-    }
+        try:
+            content = photo.get("content")
+            result = analyzer.analyze(content, photo) if isinstance(content, bytes) else _fallback_analysis(photo, version)
+        except Exception:
+            result = _fallback_analysis(photo, version)
+        result.update({"taken_at": photo.get("taken_at"), "device_model": photo.get("device_model"), "uploaded_at": photo.get("uploaded_at")})
+        analyses.append(result)
+    return build_cleaning_result(
+        album_id,
+        analyses,
+        auto_exclude_exact=auto_exclude_exact,
+        auto_exclude_quality=auto_exclude_quality,
+    )

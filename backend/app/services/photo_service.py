@@ -61,9 +61,9 @@ class PhotoService:
         photos = await self.photo_repo.list_photos(album_id)
         serialized = [serialize_photo(photo) for photo in photos]
         if recommendation == "keep":
-            serialized = [p for p in serialized if p.get("cleaning_recommendation") != "remove"]
+            serialized = [p for p in serialized if p.get("cleaning", {}).get("decision") != "remove"]
         elif recommendation == "remove":
-            serialized = [p for p in serialized if p.get("cleaning_recommendation") == "remove"]
+            serialized = [p for p in serialized if p.get("cleaning", {}).get("decision") == "remove"]
         return {"album_id": album_id, "count": len(serialized), "items": serialized}
 
     async def get_photo(self, album_id: str, photo_id: str):
