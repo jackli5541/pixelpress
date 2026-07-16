@@ -393,15 +393,18 @@ class CleaningService:
                 "cleaning_confidence": None,
                 "cleaning_issues": None,
             }
-            if clear_user_decisions:
+            if clear_user_decisions or photo.cleaning_decision_source != "user":
                 updates.update({"cleaning_decision": None, "cleaning_decision_source": None, "cleaning_decided_at": None, "cleaning_recommendation": None})
             await self.photo_repo.update_photo(photo, updates)
         await self.cleaning_repo.clear_groups(album_id)
         album.status = AlbumStatus.UPLOADED
         album.content_revision += 1
         await clear_render_artifacts(album, self.render_artifacts, stale_status=AlbumStatus.UPLOADED)
+        await self.session.flush()
+        await self.session.refresh(album)
+        result = serialize_album(album)
         await self.session.commit()
-        return serialize_album(album)
+        return result
 
     async def start_cleaning(self, album_id: str):
         return await self.request_cleaning(album_id, None)

@@ -4,7 +4,7 @@ from io import BytesIO
 
 from PIL import Image
 
-from app.engines.cleaning_engine.service import build_cleaning_result
+from app.engines.cleaning_engine.service import MAX_DUPLICATE_CANDIDATES_PER_PHOTO, _candidate_pairs, build_cleaning_result
 from .helpers import create_album, create_auth_headers, run_task_worker, upload_photo
 
 
@@ -45,6 +45,18 @@ def test_complete_link_does_not_merge_transitive_chain():
     )
     assert len(result["groups"]) == 1
     assert {member["photo_id"] for member in result["groups"][0]["members"]} in ({"a", "b"}, {"b", "c"})
+
+
+def test_duplicate_candidate_scope_is_bounded_for_large_albums():
+    analyses = [_analysis(f"photo-{index}", f"{index:016x}") for index in range(2000)]
+    pairs = _candidate_pairs(analyses)
+    counts = [0] * len(analyses)
+    for left, right in pairs:
+        counts[left] += 1
+        counts[right] += 1
+
+    assert len(pairs) <= len(analyses) * MAX_DUPLICATE_CANDIDATES_PER_PHOTO // 2
+    assert max(counts) <= MAX_DUPLICATE_CANDIDATES_PER_PHOTO
 
 
 def test_exact_subgroup_auto_excludes_copy_when_near_image_is_group_preferred():
@@ -120,6 +132,39 @@ def test_exact_duplicate_auto_exclusion_is_recoverable_and_user_choice_survives_
     restored = next(photo for photo in rerun_result["items"] if photo["id"] == excluded[0]["id"])
     assert restored["cleaning"]["decision"] == "keep"
     assert restored["cleaning"]["decision_source"] == "user"
+
+
+def test_reset_clears_system_decisions_but_preserves_user_decisions(client):
+    headers = create_auth_headers(client, username="clean-reset-owner", password="secret", role="user")
+    album = create_album(client, headers, name="Reset Cleaning")
+    content = _jpeg_bytes((80, 100, 120), size=(900, 900))
+    for filename in ("copy-a.jpg", "copy-b.jpg", "copy-c.jpg"):
+        upload_photo(client, headers, album["id"], filename, content)
+
+    queued = client.post(f"/api/v1/albums/{album['id']}/clean", headers=headers)
+    run_task_worker(queued.json()["data"]["task"])
+    initial = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    system_excluded = [item for item in initial["items"] if item["cleaning"]["decision_source"] == "system_exact_duplicate"]
+    assert len(system_excluded) == 2
+
+    user_photo, system_photo = system_excluded
+    updated = client.patch(
+        f"/api/v1/albums/{album['id']}/clean/decisions",
+        json={"photo_ids": [user_photo["id"]], "decision": "keep"},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+
+    reset = client.post(f"/api/v1/albums/{album['id']}/clean/reset", json={}, headers=headers)
+    assert reset.status_code == 200
+    assert reset.json()["data"]["status"] == "uploaded"
+
+    result = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    items = {item["id"]: item for item in result["items"]}
+    assert items[user_photo["id"]]["cleaning"]["decision"] == "keep"
+    assert items[user_photo["id"]]["cleaning"]["decision_source"] == "user"
+    assert items[system_photo["id"]]["cleaning"]["decision"] is None
+    assert items[system_photo["id"]]["cleaning"]["decision_source"] is None
 
 
 def test_cleaning_decision_legacy_patch_maps_to_user_decision(client):

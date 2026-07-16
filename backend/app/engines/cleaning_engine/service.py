@@ -12,6 +12,10 @@ BURST_ASPECT_THRESHOLD = 0.05
 NEAR_HISTOGRAM_THRESHOLD = 0.20
 BURST_HISTOGRAM_THRESHOLD = 0.30
 BURST_WINDOW_MS = 3000
+PHASH_BAND_BITS = 5
+PHASH_BUCKET_WINDOW = 8
+MAX_DUPLICATE_CANDIDATES_PER_PHOTO = 64
+MAX_COMPLETE_LINK_CLUSTER_SIZE = 64
 
 
 def phash_distance(left: str | None, right: str | None) -> int | None:
@@ -67,33 +71,87 @@ def _pair_relation(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any
     return None
 
 
+def _candidate_pairs(items: list[dict[str, Any]]) -> set[tuple[int, int]]:
+    buckets: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for index, item in enumerate(items):
+        phash = item.get("perceptual_hash")
+        if not phash:
+            continue
+        value = int(phash, 16)
+        for offset in range(0, 64, PHASH_BAND_BITS):
+            width = min(PHASH_BAND_BITS, 64 - offset)
+            band = (value >> offset) & ((1 << width) - 1)
+            buckets.setdefault((offset, band), []).append((value, index))
+
+    pairs: set[tuple[int, int]] = set()
+    candidate_counts = [0] * len(items)
+
+    def add_pair(left: int, right: int) -> None:
+        key = (min(left, right), max(left, right))
+        if key in pairs:
+            return
+        left_hash = items[key[0]].get("content_sha256")
+        if left_hash and left_hash == items[key[1]].get("content_sha256"):
+            return
+        if any(candidate_counts[index] >= MAX_DUPLICATE_CANDIDATES_PER_PHOTO for index in key):
+            return
+        pairs.add(key)
+        candidate_counts[key[0]] += 1
+        candidate_counts[key[1]] += 1
+
+    for bucket in buckets.values():
+        bucket.sort()
+        for position, (_, left) in enumerate(bucket):
+            for _, right in bucket[position + 1:position + 1 + PHASH_BUCKET_WINDOW]:
+                add_pair(left, right)
+    return pairs
+
+
+def _initial_clusters(items: list[dict[str, Any]]) -> list[set[int]]:
+    exact_groups: dict[str, set[int]] = {}
+    for index, item in enumerate(items):
+        content_hash = item.get("content_sha256")
+        if content_hash:
+            exact_groups.setdefault(content_hash, set()).add(index)
+
+    clusters = [group for group in exact_groups.values() if len(group) >= 2]
+    assigned = set().union(*clusters) if clusters else set()
+    clusters.extend({index} for index in range(len(items)) if index not in assigned)
+    return clusters
+
+
 def _complete_link_clusters(items: list[dict[str, Any]]) -> list[list[int]]:
+    candidate_pairs = _candidate_pairs(items)
     relation_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
 
     def relation(a: int, b: int) -> dict[str, Any] | None:
         key = (min(a, b), max(a, b))
         if key not in relation_cache:
-            relation_cache[key] = _pair_relation(items[key[0]], items[key[1]])
+            relation_cache[key] = _pair_relation(items[key[0]], items[key[1]]) if key in candidate_pairs else None
         return relation_cache[key]
 
     edges: list[tuple[int, int, int]] = []
-    for left in range(len(items)):
-        for right in range(left + 1, len(items)):
-            pair = relation(left, right)
-            if pair is not None:
-                priority = 0 if pair["type"] == "exact" else 1 if pair["type"] == "near" else 2
-                edges.append((priority * 100 + int(pair["distance"]), left, right))
+    for left, right in candidate_pairs:
+        pair = relation(left, right)
+        if pair is not None:
+            priority = 0 if pair["type"] == "exact" else 1 if pair["type"] == "near" else 2
+            edges.append((priority * 100 + int(pair["distance"]), left, right))
     edges.sort()
 
-    clusters: list[set[int]] = [{index} for index in range(len(items))]
+    clusters = _initial_clusters(items)
+    cluster_by_item = {index: cluster for cluster in clusters for index in cluster}
     for _, left, right in edges:
-        left_cluster = next(cluster for cluster in clusters if left in cluster)
-        right_cluster = next(cluster for cluster in clusters if right in cluster)
+        left_cluster = cluster_by_item[left]
+        right_cluster = cluster_by_item[right]
         if left_cluster is right_cluster:
+            continue
+        if len(left_cluster) + len(right_cluster) > MAX_COMPLETE_LINK_CLUSTER_SIZE:
             continue
         if all(relation(a, b) is not None for a in left_cluster for b in right_cluster):
             left_cluster.update(right_cluster)
-            clusters.remove(right_cluster)
+            for index in right_cluster:
+                cluster_by_item[index] = left_cluster
+            right_cluster.clear()
     return [sorted(cluster) for cluster in clusters if len(cluster) >= 2]
 
 
@@ -155,29 +213,30 @@ def build_cleaning_result(
         cluster = [analyses[index] for index in cluster_indexes]
         ranked = sorted(cluster, key=_preferred_sort_key)
         preferred = ranked[0]
-        pair_types = {
-            _pair_relation(cluster[left], cluster[right])["type"]
-            for left in range(len(cluster))
-            for right in range(left + 1, len(cluster))
-        }
+        exact_hashes = [item.get("content_sha256") for item in cluster if item.get("content_sha256")]
+        pair_types = {"exact"} if len(exact_hashes) != len(set(exact_hashes)) else set()
+        pair_types.update(
+            relation["type"]
+            for item in cluster
+            if item is not preferred and (relation := _pair_relation(preferred, item)) is not None
+        )
         group_type = next(iter(pair_types)) if len(pair_types) == 1 else "mixed"
         members: list[dict[str, Any]] = []
         confidence_values: list[float] = []
-        exact_canonical: dict[str, str] = {}
+        exact_canonical: dict[str, dict[str, Any]] = {}
         for item in ranked:
             content_hash = item.get("content_sha256")
             if content_hash and content_hash not in exact_canonical:
-                exact_canonical[content_hash] = item["photo_id"]
+                exact_canonical[content_hash] = item
         for rank, item in enumerate(ranked, 1):
             is_preferred = item["photo_id"] == preferred["photo_id"]
             relation = {"type": "preferred", "distance": 0, "time_delta_ms": 0, "histogram_distance": 0.0, "aspect_delta": 0.0}
             if not is_preferred:
                 relation = _pair_relation(preferred, item) or relation
             content_hash = item.get("content_sha256")
-            exact_copy = bool(content_hash and exact_canonical.get(content_hash) != item["photo_id"])
+            exact_copy = bool(content_hash and exact_canonical[content_hash]["photo_id"] != item["photo_id"])
             if exact_copy:
-                canonical = next(candidate for candidate in ranked if candidate["photo_id"] == exact_canonical[content_hash])
-                relation = _pair_relation(canonical, item) or relation
+                relation = _pair_relation(exact_canonical[content_hash], item) or relation
             threshold = 1 if relation["type"] == "exact" else NEAR_PHASH_THRESHOLD if relation["type"] == "near" else BURST_PHASH_THRESHOLD
             distance = int(relation.get("distance") or 0)
             confidence_values.append(1.0 if relation["type"] in {"exact", "preferred"} else max(0.0, 1 - distance / max(threshold, 1)))
