@@ -36,7 +36,7 @@ def _client_ip(request: Request) -> str:
 
 
 @auth_router.post("/register")
-@limiter.limit(get_settings().rate_limit_register, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_register, key_func=get_remote_address)
 async def register(request: Request, payload: RegisterPayload, db: AsyncSession = Depends(get_db)) -> dict:
     user = await AuthService(db).register(payload.username, payload.password, "user")
     if user is None:
@@ -45,7 +45,7 @@ async def register(request: Request, payload: RegisterPayload, db: AsyncSession 
 
 
 @auth_router.post("/login")
-@limiter.limit(get_settings().rate_limit_login, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_login, key_func=get_remote_address)
 async def login(request: Request, payload: LoginPayload, db: AsyncSession = Depends(get_db)) -> dict:
     protection = LoginProtectionService()
     client_ip = _client_ip(request)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -66,8 +67,10 @@ def serialize_album(album: Album) -> dict[str, Any]:
 
 
 def serialize_photo(photo: Photo) -> dict[str, Any]:
-    features = dict(photo.cleaning_features or {})
+    features = deepcopy(photo.cleaning_features or {})
     features.pop("color_histogram", None)
+    for item in features.get("faces", {}).get("items", []):
+        item.pop("expression_vector", None)
     effective_recommendation = photo.cleaning_decision
     return {
         "id": photo.id,

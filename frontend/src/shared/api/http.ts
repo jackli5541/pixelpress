@@ -8,12 +8,14 @@ export interface ApiEnvelope<T> {
 export class ApiError extends Error {
   status: number
   detail: string
+  retryAfterSeconds?: number
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, retryAfterSeconds?: number) {
     super(detail || `Request failed with status ${status}`)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail || `Request failed with status ${status}`
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
@@ -95,6 +97,15 @@ function parsePayload(raw: string) {
   }
 }
 
+function parseRetryAfter(value: string | null) {
+  if (!value) return undefined
+  const seconds = Number(value)
+  if (Number.isFinite(seconds)) return Math.max(0, seconds)
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return undefined
+  return Math.max(0, Math.ceil((timestamp - Date.now()) / 1000))
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope<T>> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -110,7 +121,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<ApiEnvelope
 
   if (!response.ok) {
     const detail = payload?.detail || payload?.message || raw || `Request failed with status ${response.status}`
-    throw new ApiError(response.status, detail)
+    throw new ApiError(response.status, detail, parseRetryAfter(response.headers.get('Retry-After')))
   }
 
   return payload as ApiEnvelope<T>

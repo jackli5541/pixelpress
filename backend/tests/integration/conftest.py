@@ -22,6 +22,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.core.config import get_settings
+from app.core.rate_limit import limiter
 from app.db import session as db_session
 from app.engines.export_engine import service as export_service
 from app.main import app as fastapi_app
@@ -29,6 +30,7 @@ from app.main import app as fastapi_app
 
 @pytest.fixture(autouse=True)
 def isolate_app_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    limiter.reset()
     settings = get_settings()
     original_uploads_dir = settings.uploads_dir
     original_database_url = settings.database_url
@@ -120,6 +122,7 @@ def isolate_app_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     settings.rate_limit_upload = original_rate_limit_upload
     settings.rate_limit_task_trigger = original_rate_limit_task_trigger
     settings.rate_limit_export = original_rate_limit_export
+    limiter.reset()
 
 
 @pytest.fixture()

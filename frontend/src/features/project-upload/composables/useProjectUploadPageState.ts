@@ -6,9 +6,10 @@ import { getAlbumResumeRoute } from '@/shared/workflow/albumWorkflow'
 import type { AlbumCard } from '@/shared/types/album'
 import type { ProjectSummary } from '@/shared/types/admin'
 
-const MAX_BATCH_FILES = 12
-const MAX_BATCH_BYTES = 48 * 1024 * 1024
+const MAX_BATCH_FILES = 50
+const MAX_BATCH_BYTES = 160 * 1024 * 1024
 const MAX_PARALLEL_BATCHES = 2
+const MAX_UPLOAD_RETRIES = 3
 
 interface UploadRejectedItem {
   filename: string
@@ -285,13 +286,26 @@ export function useProjectUploadPageState(options: UseProjectUploadPageStateOpti
     return batches
   }
 
+  function wait(milliseconds: number) {
+    return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+  }
+
   async function uploadBatch(batch: File[]) {
-    const formData = new FormData()
-    for (const file of batch) {
-      formData.append('files', file)
+    for (let attempt = 0; ; attempt += 1) {
+      const formData = new FormData()
+      for (const file of batch) {
+        formData.append('files', file)
+      }
+      try {
+        const response = await httpPostForm<UploadBatchResult>(`/albums/${options.albumId.value}/photos/upload`, formData)
+        return response.data
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 429 || attempt >= MAX_UPLOAD_RETRIES) throw error
+        const fallbackSeconds = [1, 2, 4][attempt] ?? 4
+        const retrySeconds = error.retryAfterSeconds ?? fallbackSeconds
+        await wait(retrySeconds * 1000 + Math.floor(Math.random() * 250))
+      }
     }
-    const response = await httpPostForm<UploadBatchResult>(`/albums/${options.albumId.value}/photos/upload`, formData)
-    return response.data
   }
 
   function formatRejectedSummary(items: UploadRejectedItem[]) {
@@ -310,6 +324,9 @@ export function useProjectUploadPageState(options: UseProjectUploadPageStateOpti
     if (error instanceof ApiError) {
       if (error.status === 413) {
         return '单批上传内容过大，请减少单批体积后重试。'
+      }
+      if (error.status === 429) {
+        return '上传请求仍然过快，系统已自动重试 3 次，请稍后继续。'
       }
       return error.detail
     }

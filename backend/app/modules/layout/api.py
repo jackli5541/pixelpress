@@ -37,7 +37,7 @@ class MovePagePhotosPayload(BaseModel):
 # ── Auto planning ──────────────────────────────────────
 
 @router.post("/plan", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_task_trigger, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_task_trigger, key_func=get_remote_address)
 async def plan_pages_endpoint(request: Request, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """启动页面规划：将照片分配到各页，自动选择版式模板。"""
     await require_album_access(db, user, album_id)
@@ -101,7 +101,7 @@ async def move_photos_between_pages(album_id: str, payload: MovePagePhotosPayloa
 # ── Render ─────────────────────────────────────────────
 
 @router.post("/render", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_task_trigger, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_task_trigger, key_func=get_remote_address)
 async def render_layout(request: Request, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """执行排版渲染：对所有已规划的页面生成 HTML 预览。"""
     await require_album_access(db, user, album_id)
