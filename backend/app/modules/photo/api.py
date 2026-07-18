@@ -4,10 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from slowapi.util import get_remote_address
 
 from app.core.config import get_settings
-from app.core.rate_limit import limiter
+from app.core.rate_limit import get_authenticated_album_key, limiter
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,7 +57,7 @@ async def get_photo(album_id: str, photo_id: str, db: AsyncSession = Depends(get
 
 
 @router.post("/upload")
-@limiter.limit(get_settings().rate_limit_upload, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_upload, key_func=get_authenticated_album_key)
 async def upload_photos(request: Request, album_id: str, files: list[UploadFile] = File(...), db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     await require_album_access(db, user, album_id)
     if not files:

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_login: str = "5/minute"
     rate_limit_register: str = "10/hour"
-    rate_limit_upload: str = "20/minute"
+    rate_limit_upload: str = "120/minute"
     rate_limit_task_trigger: str = "10/minute"
     rate_limit_export: str = "10/minute"
     ai_enabled: bool = False
@@ -88,10 +88,20 @@ class Settings(BaseSettings):
     ai_image_max_edge: int = 1800
     ai_debug_persist: bool = True
     run_live_ai_tests: bool = False
-    cleaning_pipeline_version: str = "b1-local-v1"
+    cleaning_pipeline_version: str = "b2-local-v3"
     cleaning_analysis_max_parallel: int = 3
     cleaning_rollout_percent: int = 100
     cleaning_auto_exclude_mode: str = "exact_and_clear_quality"
+    cleaning_hard_blur_mode: str = "shadow"
+    cleaning_hard_blur_rollout_percent: int = 0
+    cleaning_face_analysis_enabled: bool = True
+    cleaning_face_max_parallel: int = 1
+    cleaning_face_detector_model_path: str = "models/cleaning/blaze_face_full_range_sparse.tflite"
+    cleaning_face_landmarker_model_path: str = "models/cleaning/face_landmarker.task"
+    cleaning_anime_face_enabled: bool = True
+    cleaning_anime_face_model_path: str = "models/cleaning/anime-face_yolov3.onnx"
+    cleaning_pose_experiment_enabled: bool = False
+    cleaning_pose_model_path: str = "models/cleaning/pose_landmarker_lite.task"
     observability_log_level: str = "INFO"
     observability_json_logs: bool = True
     sentry_dsn: str | None = None
@@ -129,6 +139,12 @@ class Settings(BaseSettings):
             raise ValueError("CLEANING_ROLLOUT_PERCENT must be between 0 and 100")
         if self.cleaning_auto_exclude_mode not in {"off", "exact_only", "exact_and_clear_quality"}:
             raise ValueError("CLEANING_AUTO_EXCLUDE_MODE must be off, exact_only, or exact_and_clear_quality")
+        if self.cleaning_hard_blur_mode not in {"shadow", "enforce"}:
+            raise ValueError("CLEANING_HARD_BLUR_MODE must be shadow or enforce")
+        if not 0 <= self.cleaning_hard_blur_rollout_percent <= 100:
+            raise ValueError("CLEANING_HARD_BLUR_ROLLOUT_PERCENT must be between 0 and 100")
+        if self.cleaning_face_max_parallel <= 0:
+            raise ValueError("CLEANING_FACE_MAX_PARALLEL must be positive")
         if self.auth_login_max_failures <= 0:
             raise ValueError("AUTH_LOGIN_MAX_FAILURES must be positive")
         if self.auth_login_lockout_seconds <= 0:
