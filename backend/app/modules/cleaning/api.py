@@ -27,7 +27,7 @@ class CleaningResetPayload(BaseModel):
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_task_trigger, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_task_trigger, key_func=get_remote_address)
 async def start_cleaning(request: Request, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """启动照片清洗：对相册中所有照片进行质量分析。"""
     await require_album_access(db, user, album_id)

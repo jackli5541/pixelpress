@@ -4,7 +4,7 @@ from __future__ import annotations
 def test_users_me_requires_authentication(client):
     response = client.get("/api/v1/users/me")
     assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.json()["message"] == "Not authenticated"
 
 
 def test_register_and_login_flow(client):
@@ -30,7 +30,7 @@ def test_album_detail_404_for_missing_album(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 404
-    assert response.json()["detail"] == "album not found"
+    assert response.json()["message"] == "album not found"
 
 
 def test_preview_requires_existing_rendered_album(client):
@@ -52,4 +52,4 @@ def test_preview_requires_existing_rendered_album(client):
         headers=headers,
     )
     assert preview_response.status_code == 400
-    assert "not rendered yet" in preview_response.json()["detail"]
+    assert "not rendered yet" in preview_response.json()["message"]

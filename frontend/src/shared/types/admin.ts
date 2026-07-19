@@ -53,5 +53,5 @@ export interface AIConfigTestResult {
 }
 
 export interface DefaultAIConfigSummary extends Omit<AIConfigSummary, 'project_id' | 'created_by_admin_id' | 'updated_by_admin_id'> {
-  stage: 'chapter' | 'layout'
+  stage: 'chapter' | 'chapter_embedding' | 'layout'
 }

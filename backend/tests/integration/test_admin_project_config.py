@@ -64,7 +64,7 @@ def test_admin_can_manage_project_ai_configs(client, monkeypatch):
 
     defaults = client.get("/api/v1/admin/ai-default-configs", headers=admin_headers)
     assert defaults.status_code == 200
-    assert {item["stage"] for item in defaults.json()["data"]} == {"chapter", "layout"}
+    assert {item["stage"] for item in defaults.json()["data"]} == {"chapter", "chapter_embedding", "layout"}
     update_default = client.patch(
         "/api/v1/admin/ai-default-configs/chapter",
         json={"model": "gpt-5.4-mini", "api_key": "sk-default-12345678"},

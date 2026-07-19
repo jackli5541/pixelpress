@@ -21,7 +21,7 @@ router = APIRouter(prefix="/albums/{album_id}/export", tags=["export"])
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_export, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_export, key_func=get_remote_address)
 async def export_endpoint(
     request: Request,
     album_id: str,

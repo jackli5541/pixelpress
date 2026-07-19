@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.models.album import Album
 from app.models.chapter import Chapter
 from app.models.chapter_photo import ChapterPhoto
+from app.models.chapter_segment import ChapterSegment
 from app.models.export import Export
 from app.models.page import Page
 from app.models.page_photo import PagePhoto
@@ -109,7 +110,10 @@ class AlbumRepository:
         result = await self.session.execute(
             select(Chapter)
             .where(Chapter.album_id == album_id)
-            .options(selectinload(Chapter.photo_links).selectinload(ChapterPhoto.photo))
+            .options(
+                selectinload(Chapter.photo_links).selectinload(ChapterPhoto.photo),
+                selectinload(Chapter.segments).selectinload(ChapterSegment.photo_links),
+            )
             .order_by(Chapter.order_index, Chapter.created_at)
         )
         return list(result.scalars().all())
