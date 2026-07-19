@@ -5,11 +5,13 @@ from typing import Any
 
 from app.common.enums import AlbumStatus
 from app.models.album import Album
+from app.models.album_theme_profile import AlbumThemeProfile
 from app.models.chapter import Chapter
 from app.models.export import Export
 from app.models.page import Page
 from app.models.photo import Photo
 from app.models.task import Task
+from app.models.photo_theme_assessment import PhotoThemeAssessment
 from app.services.photo_selection import get_photo_review_status, is_photo_included
 
 
@@ -110,6 +112,38 @@ def serialize_chapter(chapter: Chapter) -> dict[str, Any]:
         for link in sorted(chapter.photo_links, key=lambda item: item.order_index)
         if link.__dict__.get("photo") is None or is_photo_included(link.__dict__["photo"])
     ]
+    explanation = dict(chapter.clustering_explanation or {})
+    included_photo_ids = set(photo_ids)
+    segments = []
+    for segment in sorted(chapter.segments, key=lambda item: item.order_index):
+        segment_explanation = dict(segment.clustering_explanation or {})
+        segment_photo_ids = [
+            link.photo_id
+            for link in sorted(segment.photo_links, key=lambda item: item.order_index)
+            if link.photo_id in included_photo_ids
+        ]
+        segments.append({
+            "id": segment.id,
+            "name": segment.name,
+            "description": segment.description,
+            "order": segment.order_index + 1,
+            "segment_type": segment.segment_type,
+            "time_range": segment.time_range,
+            "photo_ids": segment_photo_ids,
+            "clustering": {
+                "quality_score": segment.clustering_quality,
+                "needs_review": segment.clustering_needs_review,
+                "boundary_stability": segment_explanation.get("boundary_stability", []),
+                "feature_coverage": segment_explanation.get("feature_coverage", {}),
+                "auto_selected_k": segment_explanation.get("auto_selected_k", 1),
+                "selected_k": segment_explanation.get("selected_k", 1),
+                "peak_k": segment_explanation.get("peak_k", 1),
+                "k_selection_stability": segment_explanation.get("k_selection_stability"),
+                "selection_method": segment_explanation.get("selection_method"),
+                "partition_method": segment_explanation.get("partition_method"),
+                "representative_photo_ids": segment_explanation.get("representative_photo_ids", []),
+            },
+        })
     return {
         "id": chapter.id,
         "album_id": chapter.album_id,
@@ -117,7 +151,65 @@ def serialize_chapter(chapter: Chapter) -> dict[str, Any]:
         "description": chapter.description,
         "order": chapter.order_index + 1,
         "photo_ids": photo_ids,
+        "segments": segments,
+        "clustering": {
+            "source": chapter.clustering_source,
+            "algorithm_version": chapter.clustering_algorithm_version,
+            "quality_score": chapter.clustering_quality,
+            "needs_review": chapter.clustering_needs_review,
+              "strategy": explanation.get("strategy", "balanced"),
+              "weights": explanation.get("weights", {}),
+              "auto_selected_k": explanation.get("auto_selected_k", explanation.get("selected_k", 1)),
+              "selected_k": explanation.get("selected_k", 1),
+              "peak_k": explanation.get("peak_k", explanation.get("selected_k", 1)),
+              "granularity": explanation.get("granularity", 0),
+              "k_selection_stability": explanation.get("k_selection_stability"),
+              "selection_method": explanation.get("selection_method"),
+              "partition_method": explanation.get("partition_method"),
+            "boundary_stability": explanation.get("boundary_stability", {}),
+            "representative_photo_ids": explanation.get("representative_photo_ids", []),
+            "naming_source": explanation.get("naming_source", "rule"),
+            "feature_coverage": explanation.get("feature_coverage", {}),
+            "embedding_model": explanation.get("embedding_model"),
+            "degraded_photo_count": explanation.get("degraded_photo_count", 0),
+        },
         "created_at": _iso(chapter.created_at),
+    }
+
+
+def serialize_theme_profile(profile: AlbumThemeProfile) -> dict[str, Any]:
+    return {
+        "id": profile.id,
+        "analysis_revision": profile.analysis_revision,
+        "confirmed_revision": profile.confirmed_revision,
+        "profile_version": profile.profile_version,
+        "source": profile.source,
+        "status": profile.status,
+        "title": profile.title,
+        "constraints": dict(profile.constraints_json or {}),
+        "candidates": list(profile.candidates_json or []),
+        "chapter_strategy": profile.chapter_strategy,
+        "fallback_used": profile.fallback_used,
+        "custom_input": profile.custom_input,
+        "provider": profile.provider,
+        "model": profile.model,
+        "confirmed_at": _iso(profile.confirmed_at),
+    }
+
+
+def serialize_theme_assessment(assessment: PhotoThemeAssessment) -> dict[str, Any]:
+    effective_decision = assessment.user_decision or assessment.suggested_decision
+    return {
+        "photo": serialize_photo(assessment.photo),
+        "relevance_score": assessment.relevance_score,
+        "relevance_label": assessment.relevance_label,
+        "suggested_decision": assessment.suggested_decision,
+        "user_decision": assessment.user_decision,
+        "effective_decision": effective_decision,
+        "reasons": list(assessment.reasons_json or []),
+        "relevance_evidence": dict(assessment.evidence_json or {}),
+        "scoring_version": assessment.scoring_version,
+        "feature_version": assessment.feature_version,
     }
 
 

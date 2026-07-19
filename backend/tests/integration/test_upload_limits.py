@@ -19,7 +19,7 @@ def test_upload_rejects_too_many_files(client, monkeypatch):
         headers=headers,
     )
     assert response.status_code == 413
-    assert response.json()["detail"] == "too many files in upload request"
+    assert response.json()["message"] == "too many files in upload request"
 
 
 def test_upload_rejects_single_file_too_large(client, monkeypatch):
@@ -52,7 +52,7 @@ def test_upload_rejects_batch_too_large(client, monkeypatch):
         headers=headers,
     )
     assert response.status_code == 413
-    assert response.json()["detail"] == "upload batch too large"
+    assert response.json()["message"] == "upload batch too large"
 
 
 def test_upload_rejects_invalid_dimensions_when_pixel_limit_tight(client, monkeypatch):

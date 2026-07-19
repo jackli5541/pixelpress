@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from app.ai.types import ProviderRequest, ProviderResponse
+from app.ai.types import ImagePayload, ProviderRequest, ProviderResponse
 from app.core.config import get_settings
 
 
@@ -32,13 +32,17 @@ class OpenAICompatibleProvider:
             raise AIProviderError("OpenAI-compatible API is not configured")
 
         endpoint = self._normalize_endpoint(api_url)
+        user_content: str | list[dict[str, Any]] = request.user_prompt
+        if request.images:
+            user_content = [{"type": "text", "text": request.user_prompt}]
+            user_content.extend(self._image_content(image) for image in request.images)
         payload = {
             "model": model,
             "temperature": request.response_temperature,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": request.system_prompt},
-                {"role": "user", "content": request.user_prompt},
+                {"role": "user", "content": user_content},
             ],
         }
 
@@ -79,6 +83,16 @@ class OpenAICompatibleProvider:
                 last_error = exc
 
         raise AIProviderError(f"provider request failed: {last_error}") from last_error
+
+    @staticmethod
+    def _image_content(image: ImagePayload) -> dict[str, Any]:
+        return {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{image.media_type};base64,{image.data_base64}",
+                "detail": "low",
+            },
+        }
 
     @staticmethod
     def _normalize_endpoint(api_url: str) -> str:
