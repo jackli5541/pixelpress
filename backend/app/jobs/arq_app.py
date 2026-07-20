@@ -10,6 +10,8 @@ from app.jobs.handlers import (
     run_export_job,
     run_plan_pages_job,
     run_render_layout_job,
+    run_theme_analysis_job,
+    run_theme_selection_job,
 )
 from app.services.task_dispatch_service import TaskDispatchService
 from app.services.task_service import TaskService
@@ -42,6 +44,8 @@ async def on_startup(ctx):  # noqa: ANN001
 class WorkerSettings:
     functions = [
         run_cleaning_job,
+        run_theme_analysis_job,
+        run_theme_selection_job,
         run_cluster_chapters_job,
         run_plan_pages_job,
         run_render_layout_job,

@@ -17,6 +17,12 @@ const testResult = ref<{ ok: boolean; message: string; data?: AIConfigTestResult
 const defaultConfigs = ref<DefaultAIConfigSummary[]>([])
 const form = reactive({ provider_type: 'openai_compatible', base_url: '', model: '', api_key: '', is_active: true, priority: 100, remark: '' })
 
+const defaultConfigLabels = {
+  chapter: { title: '章节分析', description: '用于提取匿名场景属性并生成章节名称。' },
+  chapter_embedding: { title: '章节视觉向量', description: '用于照片内容相似度与事件边界判断。' },
+  layout: { title: '排版规划', description: '用于页面规划与排版。' },
+} as const
+
 const selectedConfig = computed(() => configs.value.find((item) => item.id === selectedConfigId.value) ?? null)
 const isCreating = computed(() => !selectedConfig.value)
 
@@ -124,7 +130,7 @@ onMounted(async () => {
   <SectionCard title="模型配置" description="先选择项目，再管理该项目的模型配置与连接测试。" eyebrow="Operations" tone="admin">
     <p v-if="errorMessage" class="rounded-xl bg-[#f6e2de] px-4 py-3 text-sm text-[#9b4d42]">{{ errorMessage }}</p>
 
-    <div class="mb-8 rounded-2xl bg-[#faf7f1] p-4"><div><h2 class="font-medium text-[var(--admin-text)]">默认运行时配置</h2><p class="mt-1 text-sm text-[var(--admin-muted)]">未设置项目专属配置时，任务会使用此处的阶段默认配置。</p></div><div class="mt-4 grid gap-4 xl:grid-cols-2"><DefaultAIConfigCard v-for="config in defaultConfigs" :key="config.stage" :config="config" :title="config.stage === 'chapter' ? '章节分析' : '排版规划'" :description="config.stage === 'chapter' ? '用于照片章节聚类。' : '用于页面规划与排版。'" @updated="loadDefaultConfigs" /></div></div>
+    <div class="mb-8 rounded-2xl bg-[#faf7f1] p-4"><div><h2 class="font-medium text-[var(--admin-text)]">默认运行时配置</h2><p class="mt-1 text-sm text-[var(--admin-muted)]">未设置项目专属配置时，任务会使用此处的阶段默认配置。</p></div><div class="mt-4 grid gap-4 xl:grid-cols-2"><DefaultAIConfigCard v-for="config in defaultConfigs" :key="config.stage" :config="config" :title="defaultConfigLabels[config.stage].title" :description="defaultConfigLabels[config.stage].description" @updated="loadDefaultConfigs" /></div></div>
 
     <div class="border-t border-[var(--admin-border)] pt-6">
     <h2 class="font-medium text-[var(--admin-text)]">项目专属覆盖配置</h2>

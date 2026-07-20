@@ -38,6 +38,33 @@ if not defined POSTGRES_PASSWORD set "POSTGRES_PASSWORD=postgres"
 if not defined OBSERVABILITY_LOG_LEVEL set "OBSERVABILITY_LOG_LEVEL=INFO"
 if not defined OBSERVABILITY_JSON_LOGS set "OBSERVABILITY_JSON_LOGS=true"
 if not defined CORS_ALLOW_ORIGINS set "CORS_ALLOW_ORIGINS=["http://127.0.0.1","http://localhost"]"
+if not defined AI_ENABLED set "AI_ENABLED=false"
+if not defined AI_PROVIDER_B2 set "AI_PROVIDER_B2=openai_compatible"
+if not defined AI_PROVIDER_B3 set "AI_PROVIDER_B3=openai_compatible"
+if not defined AI_MODE_B1 set "AI_MODE_B1=hybrid"
+if not defined AI_MODE_B2 set "AI_MODE_B2=llm"
+if not defined AI_MODE_B3 set "AI_MODE_B3=llm"
+if not defined AI_FALLBACK_ON_ERROR set "AI_FALLBACK_ON_ERROR=true"
+if not defined AI_MODEL_B2 set "AI_MODEL_B2=gpt4-mini"
+if not defined AI_MODEL_B3 set "AI_MODEL_B3=gpt4-mini"
+if not defined AI_REQUEST_TIMEOUT_SECONDS set "AI_REQUEST_TIMEOUT_SECONDS=60"
+if not defined AI_PROVIDER_MAX_RETRIES set "AI_PROVIDER_MAX_RETRIES=2"
+if not defined AI_B1_MAX_PARALLEL set "AI_B1_MAX_PARALLEL=3"
+if not defined AI_IMAGE_MAX_EDGE set "AI_IMAGE_MAX_EDGE=1800"
+if not defined AI_DEBUG_PERSIST set "AI_DEBUG_PERSIST=true"
+if not defined RUN_LIVE_AI_TESTS set "RUN_LIVE_AI_TESTS=false"
+if not defined THEME_CURATION_ENABLED set "THEME_CURATION_ENABLED=true"
+if not defined THEME_PIPELINE_VERSION set "THEME_PIPELINE_VERSION=theme-curation-v7-embedding-only"
+if not defined THEME_CANDIDATE_COUNT set "THEME_CANDIDATE_COUNT=3"
+if not defined THEME_RELEVANCE_CALIBRATION_PATH set "THEME_RELEVANCE_CALIBRATION_PATH="
+if not defined CHAPTER_REPRESENTATIVE_PHOTO_COUNT set "CHAPTER_REPRESENTATIVE_PHOTO_COUNT=3"
+if not defined CHAPTER_NAMING_MAX_PARALLEL set "CHAPTER_NAMING_MAX_PARALLEL=2"
+if not defined CHAPTER_FEATURE_VERSION set "CHAPTER_FEATURE_VERSION=c3-semantic-embedding-v1"
+if not defined CHAPTER_EMBEDDING_PROVIDER set "CHAPTER_EMBEDDING_PROVIDER=dashscope_multimodal_embedding"
+if not defined CHAPTER_EMBEDDING_API_URL set "CHAPTER_EMBEDDING_API_URL=https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
+if not defined CHAPTER_EMBEDDING_MODEL set "CHAPTER_EMBEDDING_MODEL=qwen3-vl-embedding"
+if not defined CHAPTER_EMBEDDING_DIMENSION set "CHAPTER_EMBEDDING_DIMENSION=512"
+if not defined CHAPTER_EMBEDDING_BATCH_SIZE set "CHAPTER_EMBEDDING_BATCH_SIZE=8"
 
 if not defined AUTH_SECRET_KEY set "AUTH_SECRET_KEY=pixpress1-prod-auth-key-2026-1234"
 if /I "%AUTH_SECRET_KEY%"=="change-me-in-production" set "AUTH_SECRET_KEY=pixpress1-prod-auth-key-2026-1234"
@@ -92,6 +119,7 @@ echo [Mirror] NPM_REGISTRY_URL=%NPM_REGISTRY_URL%
 echo [Config] AUTH_SECRET_KEY length OK
 echo [Config] SECRETS_MASTER_KEY length OK
 echo [Config] CORS_ALLOW_ORIGINS=%CORS_ALLOW_ORIGINS%
+echo [Config] AI_ENABLED=%AI_ENABLED%
 echo.
 
 docker version >nul 2>&1
@@ -126,6 +154,39 @@ powershell -NoProfile -Command ^
   "$content += 'AUTH_SECRET_KEY=' + $env:AUTH_SECRET_KEY;" ^
   "$content += 'SECRETS_MASTER_KEY=' + $env:SECRETS_MASTER_KEY;" ^
   "$content += 'CORS_ALLOW_ORIGINS=' + $env:CORS_ALLOW_ORIGINS;" ^
+  "$content += 'AI_ENABLED=' + $env:AI_ENABLED;" ^
+  "$content += 'AI_PROVIDER_B1=' + $env:AI_PROVIDER_B1;" ^
+  "$content += 'AI_PROVIDER_B2=' + $env:AI_PROVIDER_B2;" ^
+  "$content += 'AI_PROVIDER_B3=' + $env:AI_PROVIDER_B3;" ^
+  "$content += 'AI_MODE_B1=' + $env:AI_MODE_B1;" ^
+  "$content += 'AI_MODE_B2=' + $env:AI_MODE_B2;" ^
+  "$content += 'AI_MODE_B3=' + $env:AI_MODE_B3;" ^
+  "$content += 'AI_FALLBACK_ON_ERROR=' + $env:AI_FALLBACK_ON_ERROR;" ^
+  "$content += 'API_KEY=' + $env:API_KEY;" ^
+  "$content += 'API_URL=' + $env:API_URL;" ^
+  "$content += 'ANTHROPIC_API_KEY=' + $env:ANTHROPIC_API_KEY;" ^
+  "$content += 'AI_MODEL_B1=' + $env:AI_MODEL_B1;" ^
+  "$content += 'AI_MODEL_B2=' + $env:AI_MODEL_B2;" ^
+  "$content += 'AI_MODEL_B3=' + $env:AI_MODEL_B3;" ^
+  "$content += 'AI_REQUEST_TIMEOUT_SECONDS=' + $env:AI_REQUEST_TIMEOUT_SECONDS;" ^
+  "$content += 'AI_PROVIDER_MAX_RETRIES=' + $env:AI_PROVIDER_MAX_RETRIES;" ^
+  "$content += 'AI_B1_MAX_PARALLEL=' + $env:AI_B1_MAX_PARALLEL;" ^
+  "$content += 'AI_IMAGE_MAX_EDGE=' + $env:AI_IMAGE_MAX_EDGE;" ^
+  "$content += 'AI_DEBUG_PERSIST=' + $env:AI_DEBUG_PERSIST;" ^
+  "$content += 'RUN_LIVE_AI_TESTS=' + $env:RUN_LIVE_AI_TESTS;" ^
+  "$content += 'THEME_CURATION_ENABLED=' + $env:THEME_CURATION_ENABLED;" ^
+  "$content += 'THEME_PIPELINE_VERSION=' + $env:THEME_PIPELINE_VERSION;" ^
+  "$content += 'THEME_CANDIDATE_COUNT=' + $env:THEME_CANDIDATE_COUNT;" ^
+  "$content += 'THEME_RELEVANCE_CALIBRATION_PATH=' + $env:THEME_RELEVANCE_CALIBRATION_PATH;" ^
+  "$content += 'CHAPTER_REPRESENTATIVE_PHOTO_COUNT=' + $env:CHAPTER_REPRESENTATIVE_PHOTO_COUNT;" ^
+  "$content += 'CHAPTER_NAMING_MAX_PARALLEL=' + $env:CHAPTER_NAMING_MAX_PARALLEL;" ^
+  "$content += 'CHAPTER_FEATURE_VERSION=' + $env:CHAPTER_FEATURE_VERSION;" ^
+  "$content += 'CHAPTER_EMBEDDING_PROVIDER=' + $env:CHAPTER_EMBEDDING_PROVIDER;" ^
+  "$content += 'CHAPTER_EMBEDDING_API_URL=' + $env:CHAPTER_EMBEDDING_API_URL;" ^
+  "$content += 'CHAPTER_EMBEDDING_API_KEY=' + $env:CHAPTER_EMBEDDING_API_KEY;" ^
+  "$content += 'CHAPTER_EMBEDDING_MODEL=' + $env:CHAPTER_EMBEDDING_MODEL;" ^
+  "$content += 'CHAPTER_EMBEDDING_DIMENSION=' + $env:CHAPTER_EMBEDDING_DIMENSION;" ^
+  "$content += 'CHAPTER_EMBEDDING_BATCH_SIZE=' + $env:CHAPTER_EMBEDDING_BATCH_SIZE;" ^
   "Set-Content -Path $env:COMPOSE_ENV_FILE -Value $content -Encoding ascii"
 if errorlevel 1 (
   echo [ERROR] Failed to write Docker compose env file: %COMPOSE_ENV_FILE%
@@ -285,7 +346,7 @@ if "%~2"=="" (
 call :check_docker || exit /b 1
 pushd "%ROOT%"
 echo Creating administrator account in the production database...
-docker compose --env-file "%COMPOSE_ENV_FILE%" -f "%COMPOSE_FILE%" run --rm --no-deps backend python scripts/create_admin.py "%~2" "%~3"
+docker compose --env-file "%COMPOSE_ENV_FILE%" -f "%COMPOSE_FILE%" run --rm --no-deps backend python -m scripts.create_admin "%~2" "%~3"
 set "EXIT_CODE=%ERRORLEVEL%"
 popd
 exit /b %EXIT_CODE%

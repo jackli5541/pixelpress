@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PixelPress theme relevance calibration record",
+  "type": "object",
+  "required": [
+    "album_id",
+    "photo_id",
+    "theme_id",
+    "theme_category",
+    "label",
+    "positive_similarity",
+    "provider",
+    "model",
+    "dimension",
+    "query_version",
+    "scoring_version",
+    "annotators"
+  ],
+  "properties": {
+    "album_id": {"type": "string", "minLength": 1},
+    "photo_id": {"type": "string", "minLength": 1},
+    "photo_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "theme_id": {"type": "string", "minLength": 1},
+    "theme_category": {"type": "string", "minLength": 1},
+    "theme_text": {"type": "string", "minLength": 1},
+    "label": {"enum": ["relevant", "uncertain", "off_theme"]},
+    "positive_similarity": {"type": "number", "minimum": -1, "maximum": 1},
+    "raw_query_similarity": {"type": "number", "minimum": -1, "maximum": 1},
+    "expanded_query_similarity": {"type": "number", "minimum": -1, "maximum": 1},
+    "negative_similarity": {"type": ["number", "null"], "minimum": -1, "maximum": 1},
+    "margin": {"type": "number", "minimum": -2, "maximum": 2},
+    "provider": {"type": "string", "minLength": 1},
+    "model": {"type": "string", "minLength": 1},
+    "dimension": {"type": "integer", "minimum": 1},
+    "query_version": {"type": "string", "minLength": 1},
+    "scoring_version": {"type": "string", "minLength": 1},
+    "annotators": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "additionalProperties": false
+}

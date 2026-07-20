@@ -13,6 +13,7 @@ from app.modules.cleaning.api import router as cleaning_router
 from app.modules.export.api import router as export_router
 from app.modules.layout.api import router as layout_router
 from app.modules.photo.api import router as photo_router
+from app.modules.theme.api import router as theme_router
 from app.modules.user.api import auth_router, users_router
 from app.services.layout_service import LayoutService
 from app.services.photo_service import PhotoService
@@ -111,6 +112,7 @@ api_router.include_router(admin_router)
 api_router.include_router(album_router)
 api_router.include_router(photo_router)
 api_router.include_router(cleaning_router)
+api_router.include_router(theme_router)
 api_router.include_router(chapter_router)
 api_router.include_router(layout_router)
 api_router.include_router(export_router)
