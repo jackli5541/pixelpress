@@ -39,6 +39,10 @@ class AlbumRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_album_for_update(self, album_id: str) -> Album | None:
+        result = await self.session.execute(select(Album).where(Album.id == album_id).with_for_update())
+        return result.scalar_one_or_none()
+
     async def get_album_with_assets(self, album_id: str) -> Album | None:
         result = await self.session.execute(
             select(Album)

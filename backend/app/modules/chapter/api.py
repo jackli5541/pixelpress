@@ -35,7 +35,7 @@ class MovePhotosPayload(BaseModel):
 # ── Auto clustering ────────────────────────────────────
 
 @router.post("/cluster", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_task_trigger, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_task_trigger, key_func=get_remote_address)
 async def cluster_chapters(request: Request, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """启动章节聚类：按时间对照片分组，自动生成章节结构。"""
     await require_album_access(db, user, album_id)

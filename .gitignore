@@ -50,6 +50,7 @@ frontend/.pytest_cache/
 tmp_*/
 tmp_*.bat
 backend/tmp_*.py
+backend/models/cleaning/anime-face_yolov3.onnx
 
 # ==================== Local verification assets ====================
 实施计划/

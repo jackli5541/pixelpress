@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.db import session as db_session
 from app.engines.cleaning_engine.local_analyzer import _quality_suggestion
 from app.engines.cleaning_engine.service import MAX_DUPLICATE_CANDIDATES_PER_PHOTO, _candidate_pairs, build_cleaning_result
@@ -16,6 +17,18 @@ from .helpers import create_album, create_auth_headers, run_task_worker, upload_
 def _jpeg_bytes(color: tuple[int, int, int], size: tuple[int, int] = (64, 64), quality: int = 90) -> bytes:
     output = BytesIO()
     Image.new("RGB", size, color=color).save(output, format="JPEG", quality=quality)
+    return output.getvalue()
+
+
+def _unrecoverable_blur_jpeg() -> bytes:
+    image = Image.new("L", (1024, 1024))
+    draw = ImageDraw.Draw(image)
+    for top in range(0, 1024, 16):
+        for left in range(0, 1024, 16):
+            color = 255 if (left // 16 + top // 16) % 2 else 0
+            draw.rectangle((left, top, left + 15, top + 15), fill=color)
+    output = BytesIO()
+    image.filter(ImageFilter.GaussianBlur(9)).convert("RGB").save(output, format="JPEG", quality=95)
     return output.getvalue()
 
 
@@ -73,10 +86,10 @@ def test_duplicate_candidate_scope_is_bounded_for_large_albums():
     assert max(counts) <= MAX_DUPLICATE_CANDIDATES_PER_PHOTO
 
 
-def test_quality_discard_boundary_requires_two_severe_issues_below_three():
-    assert _quality_suggestion(2.99, 2) == ("remove", 0.9, True)
-    assert _quality_suggestion(3.0, 2) == ("review", 0.75, False)
-    assert _quality_suggestion(2.99, 1) == ("review", 0.75, False)
+def test_quality_discard_requires_explicit_hard_reject_signal():
+    assert _quality_suggestion(hard_reject=False, high_value_face_risk=False) == ("keep", 0.9, False)
+    assert _quality_suggestion(hard_reject=False, high_value_face_risk=True) == ("review", 0.85, False)
+    assert _quality_suggestion(hard_reject=True, high_value_face_risk=False) == ("remove", 0.99, True)
 
 
 def test_exact_subgroup_auto_excludes_copy_when_near_image_is_group_preferred():
@@ -111,7 +124,7 @@ def test_same_file_size_different_content_is_not_exact_duplicate(client):
     assert all(group["group_type"] != "exact" for group in results["groups"])
 
 
-def test_clear_quality_discard_is_automatic_and_recoverable(client):
+def test_low_texture_photo_defaults_to_keep_without_review(client):
     headers = create_auth_headers(client, username="clean-quality-owner", password="secret", role="user")
     album = create_album(client, headers, name="Clear Quality Discard")
     photo = upload_photo(client, headers, album["id"], "unusable.jpg", _jpeg_bytes((0, 0, 0)))
@@ -120,16 +133,18 @@ def test_clear_quality_discard_is_automatic_and_recoverable(client):
     run_task_worker(queued.json()["data"]["task"])
     result = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
     analyzed = next(item for item in result["items"] if item["id"] == photo["id"])
-    assert analyzed["cleaning"]["suggestion"] == "remove"
-    assert analyzed["cleaning"]["decision"] == "remove"
-    assert analyzed["cleaning"]["decision_source"] == "system_quality_threshold"
+    assert "sharpness_undetermined" in analyzed["cleaning_issues"]
+    assert analyzed["cleaning"]["suggestion"] == "keep"
+    assert analyzed["cleaning"]["decision"] is None
+    assert analyzed["cleaning"]["decision_source"] is None
+    assert result["summary"]["pending_review"] == 0
 
-    restored = client.patch(
+    retained = client.patch(
         f"/api/v1/albums/{album['id']}/clean/decisions",
         json={"photo_ids": [photo["id"]], "decision": "keep"},
         headers=headers,
     )
-    assert restored.status_code == 200
+    assert retained.status_code == 200
 
 
 def test_exact_duplicate_auto_exclusion_is_recoverable_and_user_choice_survives_rerun(client):
@@ -173,6 +188,32 @@ def test_exact_duplicate_auto_exclusion_is_recoverable_and_user_choice_survives_
     restored = next(photo for photo in rerun_result["items"] if photo["id"] == excluded[0]["id"])
     assert restored["cleaning"]["decision"] == "keep"
     assert restored["cleaning"]["decision_source"] == "user"
+
+
+def test_cached_analysis_preserves_hard_blur_signal_in_shadow_mode(client, monkeypatch):
+    monkeypatch.setattr(get_settings(), "cleaning_face_analysis_enabled", False)
+    headers = create_auth_headers(client, username="clean-cache-owner", password="secret", role="user")
+    album = create_album(client, headers, name="Cleaning Cache")
+    photo = upload_photo(client, headers, album["id"], "blurred.jpg", _unrecoverable_blur_jpeg())
+
+    first_task = client.post(f"/api/v1/albums/{album['id']}/clean", headers=headers).json()["data"]["task"]
+    run_task_worker(first_task)
+    first = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    first_photo = next(item for item in first["items"] if item["id"] == photo["id"])
+    assert first_photo["cleaning"]["features"]["sharpness"]["hard_reject"] is True, first_photo["cleaning"]["features"]
+    assert first_photo["cleaning"]["suggestion"] == "review"
+    assert first_photo["cleaning"]["decision"] is None
+
+    cached_task = client.post(f"/api/v1/albums/{album['id']}/clean", headers=headers).json()["data"]["task"]
+    run_task_worker(cached_task)
+    task_detail = client.get(f"/api/v1/albums/{album['id']}/tasks/{cached_task['id']}", headers=headers).json()["data"]
+    cached = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    cached_photo = next(item for item in cached["items"] if item["id"] == photo["id"])
+
+    assert task_detail["metrics_payload"]["cache_hits"] == 1
+    assert cached_photo["cleaning"]["features"]["sharpness"] == first_photo["cleaning"]["features"]["sharpness"]
+    assert cached_photo["cleaning"]["suggestion"] == "review"
+    assert cached_photo["cleaning"]["decision"] is None
 
 
 def test_reset_clears_system_decisions_but_preserves_user_decisions(client):
@@ -247,6 +288,91 @@ def test_review_status_and_summary_follow_effective_user_decision(client):
     assert resolved_photo["cleaning"]["review_status"] == "kept"
     assert resolved["summary"]["pending_review"] == 0
     assert resolved["summary"]["kept"] == 1
+
+
+def test_resolve_remaining_is_atomic_user_delegated_idempotent_and_survives_rerun(client):
+    headers = create_auth_headers(client, username="review-delegated-owner", password="secret", role="user")
+    album = create_album(client, headers, name="Delegated Review")
+    photo = upload_photo(client, headers, album["id"], "delegated.jpg", _jpeg_bytes((80, 90, 100), size=(900, 900)))
+    removed_photo = upload_photo(client, headers, album["id"], "delegated-remove.jpg", _jpeg_bytes((120, 70, 40), size=(900, 900)))
+    asyncio.run(_set_cleaning_state(photo["id"], suggestion="review"))
+    asyncio.run(_set_cleaning_state(removed_photo["id"], suggestion="remove"))
+
+    pending = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    assert len(pending["review_queue"]) == 2
+    resolved = client.post(
+        f"/api/v1/albums/{album['id']}/clean/review/resolve-remaining",
+        json={"expected_content_revision": pending["content_revision"]},
+        headers=headers,
+    )
+    assert resolved.status_code == 200
+    payload = resolved.json()["data"]
+    changed = {item["id"]: item for item in payload["changed_items"]}
+    delegated = changed[photo["id"]]
+    assert delegated["cleaning"]["decision"] == "keep"
+    assert delegated["cleaning"]["decision_source"] == "user_delegated"
+    assert changed[removed_photo["id"]]["cleaning"]["decision"] == "remove"
+    assert changed[removed_photo["id"]]["cleaning"]["decision_source"] == "user_delegated"
+    assert payload["resolved_review_count"] == 2
+    assert payload["content_revision"] == pending["content_revision"] + 1
+    assert payload["remaining_review_count"] == 0
+
+    repeated = client.post(
+        f"/api/v1/albums/{album['id']}/clean/review/resolve-remaining",
+        json={"expected_content_revision": payload["content_revision"]},
+        headers=headers,
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["data"]["resolved_review_count"] == 0
+    assert repeated.json()["data"]["content_revision"] == payload["content_revision"]
+
+    stale = client.post(
+        f"/api/v1/albums/{album['id']}/clean/review/resolve-remaining",
+        json={"expected_content_revision": pending["content_revision"]},
+        headers=headers,
+    )
+    assert stale.status_code == 409
+
+    rerun = client.post(f"/api/v1/albums/{album['id']}/clean", headers=headers)
+    assert rerun.status_code == 202
+    run_task_worker(rerun.json()["data"]["task"])
+    rerun_result = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+    persisted = next(item for item in rerun_result["items"] if item["id"] == photo["id"])
+    assert persisted["cleaning"]["decision"] == "keep"
+    assert persisted["cleaning"]["decision_source"] == "user_delegated"
+    persisted_removed = next(item for item in rerun_result["items"] if item["id"] == removed_photo["id"])
+    assert persisted_removed["cleaning"]["decision"] == "remove"
+    assert persisted_removed["cleaning"]["decision_source"] == "user_delegated"
+
+
+def test_cleaning_decision_rejects_stale_content_revision(client):
+    headers = create_auth_headers(client, username="review-revision-owner", password="secret", role="user")
+    album = create_album(client, headers, name="Cleaning Revision")
+    photo = upload_photo(client, headers, album["id"], "revision.jpg", _jpeg_bytes((110, 120, 130)))
+    initial = client.get(f"/api/v1/albums/{album['id']}/clean/results", headers=headers).json()["data"]
+
+    first = client.patch(
+        f"/api/v1/albums/{album['id']}/clean/decisions",
+        json={
+            "photo_ids": [photo["id"]],
+            "decision": "keep",
+            "expected_content_revision": initial["content_revision"],
+        },
+        headers=headers,
+    )
+    assert first.status_code == 200
+    assert first.json()["data"]["content_revision"] == initial["content_revision"] + 1
+
+    stale = client.patch(
+        f"/api/v1/albums/{album['id']}/clean/decisions",
+        json={
+            "photo_ids": [photo["id"]],
+            "decision": "remove",
+            "expected_content_revision": initial["content_revision"],
+        },
+        headers=headers,
+    )
+    assert stale.status_code == 409
 
 
 def test_chapter_clustering_requires_review_and_excludes_removed_photos(client):

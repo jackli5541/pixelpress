@@ -56,10 +56,15 @@ services:
       RATE_LIMIT_UPLOAD: 1000/minute
       RATE_LIMIT_TASK_TRIGGER: 1000/minute
       RATE_LIMIT_EXPORT: 1000/minute
-      CLEANING_PIPELINE_VERSION: b1-local-v1
+      CLEANING_PIPELINE_VERSION: b2-local-v3
       CLEANING_ANALYSIS_MAX_PARALLEL: 3
       CLEANING_ROLLOUT_PERCENT: 100
       CLEANING_AUTO_EXCLUDE_MODE: exact_and_clear_quality
+      CLEANING_HARD_BLUR_MODE: shadow
+      CLEANING_HARD_BLUR_ROLLOUT_PERCENT: 0
+      CLEANING_FACE_ANALYSIS_ENABLED: "false"
+      CLEANING_FACE_MAX_PARALLEL: 1
+      CLEANING_POSE_EXPERIMENT_ENABLED: "false"
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic
