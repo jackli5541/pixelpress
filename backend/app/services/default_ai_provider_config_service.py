@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import base64
+from io import BytesIO
+
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.factory import get_ai_provider
-from app.ai.types import ProviderConnectionConfig, ProviderRequest
+from app.ai.factory import get_multimodal_embedding_provider
+from app.ai.types import ImageEmbeddingRequest, ImagePayload, ProviderConnectionConfig, ProviderRequest
 from app.core.config import get_settings
 from app.repositories.default_ai_provider_config_repo import DefaultAIProviderConfigRepository
 from app.services.secret_service import SecretService
 
 
-DEFAULT_STAGES = ("chapter", "layout")
+DEFAULT_STAGES = ("chapter", "chapter_embedding", "layout")
 
 
 class DefaultAIProviderConfigService:
@@ -38,18 +43,36 @@ class DefaultAIProviderConfigService:
         settings = get_settings()
         values = {
             "chapter": (settings.ai_provider_b2, settings.ai_model_b2),
+            "chapter_embedding": (settings.chapter_embedding_provider, settings.chapter_embedding_model),
             "layout": (settings.ai_provider_b3, settings.ai_model_b3),
         }
         changed = False
         for stage, (provider_type, model) in values.items():
-            if await self.repo.get_by_stage(stage):
+            existing = await self.repo.get_by_stage(stage)
+            inherited_embedding_key = settings.chapter_embedding_api_key or settings.llm_api_key or ""
+            if existing:
+                if stage == "chapter_embedding" and not existing.api_key_masked and inherited_embedding_key:
+                    await self.repo.update(existing, {
+                        "api_key_ciphertext": self.secret_service.encrypt_api_key(inherited_embedding_key),
+                        "api_key_masked": self.secret_service.mask_api_key(inherited_embedding_key),
+                    })
+                    changed = True
                 continue
-            api_key = settings.llm_api_key or ""
+            api_key = (
+                settings.chapter_embedding_api_key or settings.llm_api_key
+                if stage == "chapter_embedding"
+                else settings.llm_api_key
+            ) or ""
+            base_url = (
+                settings.chapter_embedding_api_url
+                if stage == "chapter_embedding"
+                else settings.llm_api_url
+            )
             await self.repo.create(
                 {
                     "stage": stage,
                     "provider_type": provider_type or "openai_compatible",
-                    "base_url": settings.llm_api_url,
+                    "base_url": base_url,
                     "model": model or "",
                     "api_key_ciphertext": self.secret_service.encrypt_api_key(api_key),
                     "api_key_masked": self.secret_service.mask_api_key(api_key),
@@ -113,6 +136,24 @@ class DefaultAIProviderConfigService:
             source="global_default_config",
             config_id=config.id,
         )
+        if stage == "chapter_embedding":
+            response = await get_multimodal_embedding_provider(connection.provider).embed_images(
+                ImageEmbeddingRequest(
+                    images=[ImagePayload(media_type="image/jpeg", data_base64=self._test_image_base64())],
+                    model=connection.model,
+                    dimension=get_settings().chapter_embedding_dimension,
+                    connection=connection,
+                )
+            )
+            return {
+                "config_id": config.id,
+                "stage": stage,
+                "provider": response.provider,
+                "model": response.model,
+                "source": connection.source,
+                "debug": response.debug,
+                "payload": {"status": "ok", "dimension": len(response.embeddings[0])},
+            }
         response = await get_ai_provider(connection.provider).infer_json(
             ProviderRequest(
                 system_prompt='Return a JSON object with {"status":"ok"}.',
@@ -123,3 +164,9 @@ class DefaultAIProviderConfigService:
             )
         )
         return {"config_id": config.id, "stage": stage, "provider": response.provider, "model": response.model, "source": connection.source, "debug": response.debug, "payload": response.payload}
+
+    @staticmethod
+    def _test_image_base64() -> str:
+        output = BytesIO()
+        Image.new("RGB", (64, 64), color=(64, 128, 192)).save(output, format="JPEG", quality=85)
+        return base64.b64encode(output.getvalue()).decode("ascii")

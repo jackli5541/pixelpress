@@ -102,6 +102,19 @@ class Settings(BaseSettings):
     cleaning_anime_face_model_path: str = "models/cleaning/anime-face_yolov3.onnx"
     cleaning_pose_experiment_enabled: bool = False
     cleaning_pose_model_path: str = "models/cleaning/pose_landmarker_lite.task"
+    theme_curation_enabled: bool = True
+    theme_pipeline_version: str = "theme-curation-v7-embedding-only"
+    theme_candidate_count: int = 3
+    theme_relevance_calibration_path: str | None = None
+    chapter_representative_photo_count: int = 3
+    chapter_naming_max_parallel: int = 2
+    chapter_feature_version: str = "c4-image-embedding-only-v1"
+    chapter_embedding_provider: str = "dashscope_multimodal_embedding"
+    chapter_embedding_api_url: str = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
+    chapter_embedding_api_key: str | None = None
+    chapter_embedding_model: str = "qwen3-vl-embedding"
+    chapter_embedding_dimension: int = 512
+    chapter_embedding_batch_size: int = 8
     observability_log_level: str = "INFO"
     observability_json_logs: bool = True
     sentry_dsn: str | None = None
@@ -111,6 +124,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @field_validator("cors_allow_origins", mode="before")
@@ -145,6 +159,12 @@ class Settings(BaseSettings):
             raise ValueError("CLEANING_HARD_BLUR_ROLLOUT_PERCENT must be between 0 and 100")
         if self.cleaning_face_max_parallel <= 0:
             raise ValueError("CLEANING_FACE_MAX_PARALLEL must be positive")
+        if not 1 <= self.theme_candidate_count <= 5:
+            raise ValueError("THEME_CANDIDATE_COUNT must be between 1 and 5")
+        if not 1 <= self.chapter_representative_photo_count <= 3:
+            raise ValueError("CHAPTER_REPRESENTATIVE_PHOTO_COUNT must be between 1 and 3")
+        if self.chapter_naming_max_parallel <= 0:
+            raise ValueError("CHAPTER_NAMING_MAX_PARALLEL must be positive")
         if self.auth_login_max_failures <= 0:
             raise ValueError("AUTH_LOGIN_MAX_FAILURES must be positive")
         if self.auth_login_lockout_seconds <= 0:

@@ -52,7 +52,7 @@ def test_upload_persists_capture_metadata_and_normalizes_heic(client, monkeypatc
     uploaded = payload["uploaded"][0]
     assert uploaded["filename"] == "captured.jpg"
     assert uploaded["content_type"] == "image/jpeg"
-    assert uploaded["taken_at"] == "2024-05-06T07:08:09+08:00"
+    assert uploaded["taken_at"] == "2024-05-05T23:08:09+00:00"
     assert uploaded["taken_timezone"] == "+08:00"
     assert uploaded["gps_latitude"] == 31.2304
     assert uploaded["gps_longitude"] == 121.4737

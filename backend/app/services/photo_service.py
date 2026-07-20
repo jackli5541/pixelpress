@@ -148,6 +148,7 @@ class PhotoService:
 
         album.photo_count = len(await self.photo_repo.list_photos(album_id))
         album.content_revision += 1
+        album.theme_input_revision += 1
         await self._clear_render_artifacts(album)
         album.status = AlbumStatus.UPLOADED
         await self.session.commit()
@@ -181,6 +182,7 @@ class PhotoService:
         album = await self.album_repo.get_album(album_id)
         if album is not None:
             album.content_revision += 1
+            album.theme_input_revision += 1
             await self._clear_render_artifacts(album)
         await self.session.commit()
         return serialize_photo(updated)
@@ -196,6 +198,7 @@ class PhotoService:
         if album is not None:
             album.photo_count = len(await self.photo_repo.list_photos(album_id))
             album.content_revision += 1
+            album.theme_input_revision += 1
             await self._clear_render_artifacts(album)
         await self.session.commit()
         return True

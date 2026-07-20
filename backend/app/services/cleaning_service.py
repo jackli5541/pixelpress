@@ -252,6 +252,7 @@ class CleaningService:
             await self.cleaning_repo.replace_groups(album_id, task_id, version, result["groups"])
             album.status = AlbumStatus.CLEANED
             album.content_revision += 1
+            album.theme_input_revision += 1
             await clear_render_artifacts(album, self.render_artifacts, stale_status=AlbumStatus.CLEANED)
             metrics = {
                 "duration_ms": round((perf_counter() - started) * 1000),
@@ -381,6 +382,7 @@ class CleaningService:
                 changed_ids.append(photo.id)
         if changed:
             album.content_revision += 1
+            album.theme_input_revision += 1
             album.status = AlbumStatus.CLEANED
             await clear_render_artifacts(album, self.render_artifacts, stale_status=AlbumStatus.CLEANED)
         await self.session.commit()
@@ -633,6 +635,7 @@ class CleaningService:
                 removed += 1
         if kept or removed:
             album.content_revision += 1
+            album.theme_input_revision += 1
             album.status = AlbumStatus.CLEANED
             await clear_render_artifacts(album, self.render_artifacts, stale_status=AlbumStatus.CLEANED)
         await self.session.commit()
@@ -666,6 +669,7 @@ class CleaningService:
         await self.cleaning_repo.clear_groups(album_id)
         album.status = AlbumStatus.UPLOADED
         album.content_revision += 1
+        album.theme_input_revision += 1
         await clear_render_artifacts(album, self.render_artifacts, stale_status=AlbumStatus.UPLOADED)
         await self.session.flush()
         await self.session.refresh(album)

@@ -23,6 +23,8 @@ from app.jobs.handlers import (
     run_export_job,
     run_plan_pages_job,
     run_render_layout_job,
+    run_theme_analysis_job,
+    run_theme_selection_job,
 )
 from app.services.auth_service import AuthService
 
@@ -85,7 +87,38 @@ def run_task_worker(task: dict) -> None:
         )
         return
     if task_type == "cluster_chapters":
-        asyncio.run(run_cluster_chapters_job({}, task["id"], task["album_id"]))
+        asyncio.run(
+            run_cluster_chapters_job(
+                {},
+                task["id"],
+                task["album_id"],
+                confirm_rebuild=bool(params.get("confirm_rebuild")),
+                granularity=int(params.get("granularity", 0)),
+            )
+        )
+        return
+    if task_type == "analyze_album_theme":
+        asyncio.run(
+            run_theme_analysis_job(
+                {},
+                task["id"],
+                task["album_id"],
+                custom_theme=params.get("custom_theme"),
+            )
+        )
+        return
+    if task_type == "score_album_theme":
+        asyncio.run(
+            run_theme_selection_job(
+                {},
+                task["id"],
+                task["album_id"],
+                profile_id=params["profile_id"],
+                candidate_id=params["candidate_id"],
+                chapter_strategy=params["chapter_strategy"],
+                confirm_rebuild=bool(params.get("confirm_rebuild")),
+            )
+        )
         return
     if task_type == "plan_pages":
         asyncio.run(run_plan_pages_job({}, task["id"], task["album_id"]))
