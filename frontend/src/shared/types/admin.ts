@@ -20,6 +20,7 @@ export interface AdminUserSummary {
 export interface AIConfigSummary {
   id: string
   project_id: string
+  stage: 'chapter' | 'chapter_embedding' | 'layout' | null
   provider_type: string
   base_url: string | null
   model: string

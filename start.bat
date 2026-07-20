@@ -97,6 +97,7 @@ if /I "%COMMAND%"=="test-logs" goto test_logs
 if /I "%COMMAND%"=="test-ps" goto test_ps
 if /I "%COMMAND%"=="create-admin" goto create_admin
 if /I "%COMMAND%"=="pull" goto pull
+if /I "%COMMAND%"=="check-config" goto check_config
 if /I "%COMMAND%"=="help" goto help
 
 call :check_docker || goto fail
@@ -148,6 +149,49 @@ call :write_compose_env || exit /b 1
 
 exit /b 0
 
+:check_config
+echo ============================================
+echo   Pixpress1 - AI Configuration Check
+echo ============================================
+echo [AI] enabled=%AI_ENABLED%
+if /I not "%AI_ENABLED%"=="true" (
+  echo [AI] All AI stages are disabled.
+  exit /b 0
+)
+if "%AI_CHAPTER_PROVIDER%"=="" set "AI_CHAPTER_PROVIDER=%AI_PROVIDER_B2%"
+if "%AI_CHAPTER_MODEL%"=="" set "AI_CHAPTER_MODEL=%AI_MODEL_B2%"
+if "%AI_CHAPTER_API_URL%"=="" set "AI_CHAPTER_API_URL=%API_URL%"
+if "%AI_CHAPTER_API_KEY%"=="" set "AI_CHAPTER_API_KEY=%API_KEY%"
+if "%AI_LAYOUT_PROVIDER%"=="" set "AI_LAYOUT_PROVIDER=%AI_PROVIDER_B3%"
+if "%AI_LAYOUT_MODEL%"=="" set "AI_LAYOUT_MODEL=%AI_MODEL_B3%"
+if "%AI_LAYOUT_API_URL%"=="" set "AI_LAYOUT_API_URL=%API_URL%"
+if "%AI_LAYOUT_API_KEY%"=="" set "AI_LAYOUT_API_KEY=%API_KEY%"
+if "%AI_CHAPTER_EMBEDDING_PROVIDER%"=="" set "AI_CHAPTER_EMBEDDING_PROVIDER=%CHAPTER_EMBEDDING_PROVIDER%"
+if "%AI_CHAPTER_EMBEDDING_MODEL%"=="" set "AI_CHAPTER_EMBEDDING_MODEL=%CHAPTER_EMBEDDING_MODEL%"
+if "%AI_CHAPTER_EMBEDDING_API_URL%"=="" set "AI_CHAPTER_EMBEDDING_API_URL=%CHAPTER_EMBEDDING_API_URL%"
+if "%AI_CHAPTER_EMBEDDING_API_KEY%"=="" set "AI_CHAPTER_EMBEDDING_API_KEY=%CHAPTER_EMBEDDING_API_KEY%"
+call :report_ai_stage chapter "%AI_CHAPTER_PROVIDER%" "%AI_CHAPTER_MODEL%" "%AI_CHAPTER_API_URL%" "%AI_CHAPTER_API_KEY%"
+if /I "%THEME_CURATION_ENABLED%"=="true" (
+  call :report_ai_stage chapter_embedding "%AI_CHAPTER_EMBEDDING_PROVIDER%" "%AI_CHAPTER_EMBEDDING_MODEL%" "%AI_CHAPTER_EMBEDDING_API_URL%" "%AI_CHAPTER_EMBEDDING_API_KEY%"
+) else (
+  echo [AI] chapter_embedding=disabled
+)
+call :report_ai_stage layout "%AI_LAYOUT_PROVIDER%" "%AI_LAYOUT_MODEL%" "%AI_LAYOUT_API_URL%" "%AI_LAYOUT_API_KEY%"
+exit /b 0
+
+:report_ai_stage
+set "STAGE=%~1"
+set "STAGE_PROVIDER=%~2"
+set "STAGE_MODEL=%~3"
+set "STAGE_URL=%~4"
+set "STAGE_KEY=%~5"
+if "%STAGE_PROVIDER%"=="" set "STAGE_PROVIDER=legacy fallback"
+if "%STAGE_MODEL%"=="" set "STAGE_MODEL=legacy fallback"
+if "%STAGE_URL%"=="" set "STAGE_URL=missing"
+if "%STAGE_KEY%"=="" (set "STAGE_KEY_STATUS=missing") else (set "STAGE_KEY_STATUS=set")
+echo [AI] %STAGE% provider=%STAGE_PROVIDER% model=%STAGE_MODEL% url=%STAGE_URL% key=%STAGE_KEY_STATUS%
+exit /b 0
+
 :write_compose_env
 powershell -NoProfile -Command ^
   "$content = @();" ^
@@ -174,6 +218,18 @@ powershell -NoProfile -Command ^
   "$content += 'AI_IMAGE_MAX_EDGE=' + $env:AI_IMAGE_MAX_EDGE;" ^
   "$content += 'AI_DEBUG_PERSIST=' + $env:AI_DEBUG_PERSIST;" ^
   "$content += 'RUN_LIVE_AI_TESTS=' + $env:RUN_LIVE_AI_TESTS;" ^
+  "$content += 'AI_CHAPTER_PROVIDER=' + $env:AI_CHAPTER_PROVIDER;" ^
+  "$content += 'AI_CHAPTER_API_URL=' + $env:AI_CHAPTER_API_URL;" ^
+  "$content += 'AI_CHAPTER_API_KEY=' + $env:AI_CHAPTER_API_KEY;" ^
+  "$content += 'AI_CHAPTER_MODEL=' + $env:AI_CHAPTER_MODEL;" ^
+  "$content += 'AI_LAYOUT_PROVIDER=' + $env:AI_LAYOUT_PROVIDER;" ^
+  "$content += 'AI_LAYOUT_API_URL=' + $env:AI_LAYOUT_API_URL;" ^
+  "$content += 'AI_LAYOUT_API_KEY=' + $env:AI_LAYOUT_API_KEY;" ^
+  "$content += 'AI_LAYOUT_MODEL=' + $env:AI_LAYOUT_MODEL;" ^
+  "$content += 'AI_CHAPTER_EMBEDDING_PROVIDER=' + $env:AI_CHAPTER_EMBEDDING_PROVIDER;" ^
+  "$content += 'AI_CHAPTER_EMBEDDING_API_URL=' + $env:AI_CHAPTER_EMBEDDING_API_URL;" ^
+  "$content += 'AI_CHAPTER_EMBEDDING_API_KEY=' + $env:AI_CHAPTER_EMBEDDING_API_KEY;" ^
+  "$content += 'AI_CHAPTER_EMBEDDING_MODEL=' + $env:AI_CHAPTER_EMBEDDING_MODEL;" ^
   "$content += 'THEME_CURATION_ENABLED=' + $env:THEME_CURATION_ENABLED;" ^
   "$content += 'THEME_PIPELINE_VERSION=' + $env:THEME_PIPELINE_VERSION;" ^
   "$content += 'THEME_CANDIDATE_COUNT=' + $env:THEME_CANDIDATE_COUNT;" ^

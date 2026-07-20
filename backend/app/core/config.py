@@ -71,6 +71,18 @@ class Settings(BaseSettings):
     ai_provider_b1: str = ""
     ai_provider_b2: str = "openai_compatible"
     ai_provider_b3: str = "openai_compatible"
+    ai_chapter_provider: str | None = None
+    ai_chapter_api_url: str | None = None
+    ai_chapter_api_key: str | None = None
+    ai_chapter_model: str | None = None
+    ai_layout_provider: str | None = None
+    ai_layout_api_url: str | None = None
+    ai_layout_api_key: str | None = None
+    ai_layout_model: str | None = None
+    ai_chapter_embedding_provider: str | None = None
+    ai_chapter_embedding_api_url: str | None = None
+    ai_chapter_embedding_api_key: str | None = None
+    ai_chapter_embedding_model: str | None = None
     ai_mode_b1: str = "hybrid"
     ai_mode_b2: str = "llm"
     ai_mode_b3: str = "llm"
@@ -197,6 +209,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def resolved_chapter_config(self) -> tuple[str, str | None, str | None, str]:
+        return (self.ai_chapter_provider or self.ai_provider_b2, self.ai_chapter_api_url or self.llm_api_url, self.ai_chapter_api_key or self.llm_api_key, self.ai_chapter_model or self.ai_model_b2)
+
+    @property
+    def resolved_layout_config(self) -> tuple[str, str | None, str | None, str]:
+        return (self.ai_layout_provider or self.ai_provider_b3, self.ai_layout_api_url or self.llm_api_url, self.ai_layout_api_key or self.llm_api_key, self.ai_layout_model or self.ai_model_b3)
+
+    @property
+    def resolved_embedding_config(self) -> tuple[str, str | None, str | None, str]:
+        return (self.ai_chapter_embedding_provider or self.chapter_embedding_provider, self.ai_chapter_embedding_api_url or self.chapter_embedding_api_url, self.ai_chapter_embedding_api_key or self.chapter_embedding_api_key or self.llm_api_key, self.ai_chapter_embedding_model or self.chapter_embedding_model)
 
     @property
     def resolved_cors_allow_origins(self) -> list[str]:
