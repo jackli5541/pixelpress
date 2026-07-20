@@ -42,6 +42,8 @@ export interface ThemeAssessment<Photo> {
     margin?: number | null
     calibration_version?: string
     calibration_status?: 'ready' | 'missing' | 'disabled' | 'mismatch'
+    decision_mode?: 'calibrated' | 'provisional_binary' | 'manual_review'
+    provisional_threshold?: number | null
     model?: string | null
     dimension?: number | null
   }
@@ -57,6 +59,8 @@ export interface ThemeWorkspace<Photo> {
   calibration: {
     status: 'ready' | 'missing' | 'disabled' | 'mismatch'
     auto_decision_enabled: boolean
+    decision_mode: 'calibrated' | 'provisional_binary' | 'manual_review'
+    provisional_threshold: number | null
     version: string
     provider: string
     model: string

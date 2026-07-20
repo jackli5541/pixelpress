@@ -219,6 +219,8 @@ class ThemeRelevanceEngine:
         candidate: dict[str, Any],
         query: ThemeQuery | None,
         calibration: RelevanceCalibration,
+        provisional_auto_decision_enabled: bool = False,
+        provisional_decision_threshold: float = 0.60,
     ) -> dict[str, Any]:
         if candidate.get("id") == "complete_record":
             return {
@@ -245,6 +247,8 @@ class ThemeRelevanceEngine:
             taken_at=taken_at,
             query=query,
             calibration=calibration,
+            provisional_auto_decision_enabled=provisional_auto_decision_enabled,
+            provisional_decision_threshold=provisional_decision_threshold,
             constraints=dict(candidate.get("explicit_constraints") or {}),
             feature_version=(feature or {}).get("feature_version"),
         )
@@ -361,6 +365,8 @@ def score_photo_relevance(
     taken_at: Any,
     query: ThemeQuery | None,
     calibration: RelevanceCalibration,
+    provisional_auto_decision_enabled: bool = False,
+    provisional_decision_threshold: float = 0.60,
     constraints: dict[str, Any] | None = None,
     feature_version: str | None = None,
 ) -> dict[str, Any]:
@@ -392,6 +398,8 @@ def score_photo_relevance(
         "signal": None,
         "calibrated": False,
         "score_kind": "calibrated_probability" if calibration_status == "ready" else "embedding_similarity_rank",
+        "decision_mode": "calibrated" if calibration_status == "ready" else "manual_review",
+        "provisional_threshold": None,
     }
 
     unavailable_reason = None
@@ -449,6 +457,36 @@ def score_photo_relevance(
             "mismatch": "calibration_model_mismatch",
             "missing": "calibration_missing",
         }.get(calibration_status, "calibration_unavailable")
+        provisional_enabled = provisional_auto_decision_enabled and calibration_status in {"missing", "disabled"}
+        if forced == "review":
+            return _payload(photo_id, rank_score, "uncertain", "review", reasons, evidence, feature_version)
+        if provisional_enabled:
+            threshold = max(0.0, min(1.0, float(provisional_decision_threshold)))
+            evidence.update({
+                "decision_mode": "provisional_binary",
+                "provisional_threshold": threshold,
+            })
+            if forced == "exclude":
+                return _payload(photo_id, 0.0, "off_theme", "exclude", reasons, evidence, feature_version)
+            if rank_score >= threshold:
+                return _payload(
+                    photo_id,
+                    rank_score,
+                    "relevant",
+                    "keep",
+                    [*reasons, "provisional_threshold_match", fallback_reason],
+                    evidence,
+                    feature_version,
+                )
+            return _payload(
+                photo_id,
+                rank_score,
+                "off_theme",
+                "exclude",
+                [*reasons, "provisional_threshold_mismatch", fallback_reason],
+                evidence,
+                feature_version,
+            )
         if forced == "exclude":
             reasons = [*reasons, "constraint_mismatch_unconfirmed"]
         return _payload(photo_id, rank_score, "uncertain", "review", [*reasons, fallback_reason], evidence, feature_version)

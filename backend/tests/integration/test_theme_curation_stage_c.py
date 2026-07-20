@@ -261,10 +261,13 @@ def test_custom_theme_review_override_filters_photos_and_drives_chapter_strategy
     assert stale["phase"] == "needs_analysis"
 
 
-def test_theme_analysis_failure_falls_back_to_complete_record(client, monkeypatch):
+def test_theme_analysis_failure_falls_back_to_presets_and_complete_record(client, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "theme_curation_enabled", True)
     monkeypatch.setattr(settings, "ai_enabled", False)
+    monkeypatch.setattr(settings, "theme_relevance_calibration_path", None)
+    monkeypatch.setattr(settings, "theme_provisional_auto_decision_enabled", True)
+    monkeypatch.setattr(settings, "theme_provisional_decision_threshold", 0.60)
 
     headers = create_auth_headers(client, username="theme-fallback", password="secret", role="user")
     album = create_album(client, headers, name="Theme Fallback")
@@ -273,10 +276,62 @@ def test_theme_analysis_failure_falls_back_to_complete_record(client, monkeypatc
 
     analysis = client.post(f"/api/v1/albums/{album['id']}/theme-analysis", headers=headers)
     assert analysis.status_code == 202
-    run_task_worker(analysis.json()["data"]["task"])
+    analysis_task = analysis.json()["data"]["task"]
+    run_task_worker(analysis_task)
     workspace = client.get(f"/api/v1/albums/{album['id']}/theme-workspace", headers=headers).json()["data"]
+    completed_task = client.get(
+        f"/api/v1/albums/{album['id']}/tasks/{analysis_task['id']}",
+        headers=headers,
+    ).json()["data"]
     assert workspace["profile"]["fallback_used"] is True
-    assert [item["id"] for item in workspace["profile"]["candidates"]] == ["complete_record"]
+    assert [item["title"] for item in workspace["profile"]["candidates"]] == [
+        "旅行见闻",
+        "亲友相聚",
+        "日常片段",
+        "完整记录",
+    ]
+    assert [item["source"] for item in workspace["profile"]["candidates"][:3]] == ["preset"] * 3
+    assert workspace["calibration"]["status"] in {"missing", "disabled"}
+    assert workspace["calibration"]["auto_decision_enabled"] is True
+    assert workspace["calibration"]["decision_mode"] == "provisional_binary"
+    assert workspace["calibration"]["provisional_threshold"] == 0.6
+    assert completed_task["debug_payload"]["fallback_reason"] == "theme_ai_disabled"
+    assert completed_task["debug_payload"]["preset_candidate_count"] == 3
+
+
+def test_custom_theme_failure_preserves_input_and_fills_two_presets(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "theme_curation_enabled", True)
+    monkeypatch.setattr(settings, "ai_enabled", False)
+    monkeypatch.setattr(settings, "theme_relevance_calibration_path", None)
+    monkeypatch.setattr(settings, "theme_provisional_auto_decision_enabled", True)
+    monkeypatch.setattr(settings, "theme_provisional_decision_threshold", 0.60)
+
+    headers = create_auth_headers(client, username="theme-custom-fallback", password="secret", role="user")
+    album = create_album(client, headers, name="Custom Theme Fallback")
+    photo = upload_photo(client, headers, album["id"], "fallback.jpg")
+    _finish_cleaning(client, headers, album["id"], [photo["id"]])
+
+    analysis = client.post(
+        f"/api/v1/albums/{album['id']}/theme-analysis",
+        json={"custom_theme": "我的夏日散步"},
+        headers=headers,
+    )
+    analysis_task = analysis.json()["data"]["task"]
+    run_task_worker(analysis_task)
+    workspace = client.get(f"/api/v1/albums/{album['id']}/theme-workspace", headers=headers).json()["data"]
+    completed_task = client.get(
+        f"/api/v1/albums/{album['id']}/tasks/{analysis_task['id']}",
+        headers=headers,
+    ).json()["data"]
+    candidates = workspace["profile"]["candidates"]
+
+    assert workspace["profile"]["fallback_used"] is True
+    assert [item["title"] for item in candidates] == ["我的夏日散步", "旅行见闻", "亲友相聚", "完整记录"]
+    assert candidates[0]["source"] == "custom"
+    assert candidates[0]["id"] == "fallback-custom"
+    assert completed_task["debug_payload"]["fallback_reason"] == "theme_ai_disabled"
+    assert completed_task["debug_payload"]["preset_candidate_count"] == 2
 
 
 def test_theme_review_can_reselect_an_existing_candidate(client, monkeypatch):

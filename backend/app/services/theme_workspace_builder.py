@@ -34,9 +34,24 @@ class ThemeWorkspaceBuilder:
             model=model,
             dimension=settings.chapter_embedding_dimension,
         )
+        provisional_enabled = (
+            settings.theme_provisional_auto_decision_enabled
+            and calibration_status in {"missing", "disabled"}
+        )
+        decision_mode = (
+            "calibrated"
+            if calibration_status == "ready"
+            else "provisional_binary"
+            if provisional_enabled
+            else "manual_review"
+        )
         calibration_payload = {
             "status": calibration_status,
-            "auto_decision_enabled": calibration_status == "ready",
+            "auto_decision_enabled": calibration_status == "ready" or provisional_enabled,
+            "decision_mode": decision_mode,
+            "provisional_threshold": (
+                settings.theme_provisional_decision_threshold if provisional_enabled else None
+            ),
             "version": calibration.version,
             "provider": provider,
             "model": model,
@@ -57,7 +72,13 @@ class ThemeWorkspaceBuilder:
                     "fallback_used": True,
                 },
                 "assessments": [],
-                "calibration": {**calibration_payload, "status": "disabled", "auto_decision_enabled": False},
+                "calibration": {
+                    **calibration_payload,
+                    "status": "disabled",
+                    "auto_decision_enabled": False,
+                    "decision_mode": "manual_review",
+                    "provisional_threshold": None,
+                },
                 "summary": {"total": 0, "kept": 0, "suggested_exclude": 0, "uncertain": 0, "review": 0, "excluded": 0},
             }
         profile = await self.repo.latest_profile(album_id)

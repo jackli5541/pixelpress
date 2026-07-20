@@ -12,6 +12,7 @@ from app.engines.chapter_engine.image_payloads import encode_image_payload
 from app.engines.theme_pipeline import (
     build_theme_query_spec,
     complete_record_candidate,
+    fill_theme_candidates,
     generate_theme_candidates,
     normalize_theme_constraints,
     selected_theme_text,
@@ -108,7 +109,16 @@ class ThemeCurationTaskRunner:
                     fallback_reason = str(exc)[:255]
             else:
                 fallback_reason = "theme_ai_disabled"
-            candidates = candidates[: settings.theme_candidate_count]
+            candidates, preset_candidate_count = fill_theme_candidates(
+                candidates,
+                candidate_count=settings.theme_candidate_count,
+                custom_theme=custom_theme,
+            )
+            fallback_candidate_count = preset_candidate_count + sum(
+                item.get("id") == "fallback-custom" for item in candidates
+            )
+            if fallback_candidate_count and not fallback_reason:
+                fallback_reason = "candidate_shortfall"
             candidates.append(complete_record_candidate())
             profile = await self.repo.create_profile({
                 "album_id": album_id,
@@ -122,7 +132,7 @@ class ThemeCurationTaskRunner:
                 "constraints_json": {},
                 "candidates_json": candidates,
                 "chapter_strategy": "balanced",
-                "fallback_used": bool(fallback_reason),
+                "fallback_used": fallback_candidate_count > 0,
                 "custom_input": (custom_theme or "").strip() or None,
                 "provider": provider,
                 "model": model,
@@ -134,11 +144,16 @@ class ThemeCurationTaskRunner:
                     "duration_ms": round((datetime.now(UTC) - started).total_seconds() * 1000),
                     "photo_count": len(photos),
                     "candidate_count": len(candidates),
-                    "fallback_used": bool(fallback_reason),
+                    "fallback_used": fallback_candidate_count > 0,
                     "candidate_shortfall": candidate_shortfall,
+                    "preset_candidate_count": preset_candidate_count,
                     **feature_metrics,
                 },
-                debug_payload={"fallback_reason": fallback_reason, "candidate_shortfall": candidate_shortfall},
+                debug_payload={
+                    "fallback_reason": fallback_reason,
+                    "candidate_shortfall": candidate_shortfall,
+                    "preset_candidate_count": preset_candidate_count,
+                },
                 result_revision=album.content_revision,
             )
             await self.session.commit()
@@ -218,6 +233,7 @@ class ThemeCurationTaskRunner:
                 except Exception:  # noqa: BLE001
                     query = None
             calibration = load_calibration(get_settings().theme_relevance_calibration_path)
+            settings = get_settings()
             explicit_constraints = normalize_theme_constraints(
                 {},
                 custom_theme=profile.custom_input if candidate.get("source") == "custom" else None,
@@ -231,6 +247,8 @@ class ThemeCurationTaskRunner:
                     candidate=scoring_candidate,
                     query=query,
                     calibration=calibration,
+                    provisional_auto_decision_enabled=settings.theme_provisional_auto_decision_enabled,
+                    provisional_decision_threshold=settings.theme_provisional_decision_threshold,
                 )
                 for photo in photos
             ]
@@ -251,7 +269,8 @@ class ThemeCurationTaskRunner:
                     "review_photo_count": sum(item["suggested_decision"] == "review" for item in assessments),
                     "suggested_exclude_count": sum(item["suggested_decision"] == "exclude" for item in assessments),
                     "auto_decision_enabled": any(
-                        (item.get("evidence_json") or {}).get("calibration_status") == "ready"
+                        (item.get("evidence_json") or {}).get("decision_mode")
+                        in {"calibrated", "provisional_binary"}
                         for item in assessments
                     ),
                 },

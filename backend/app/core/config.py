@@ -118,6 +118,8 @@ class Settings(BaseSettings):
     theme_pipeline_version: str = "theme-curation-v7-embedding-only"
     theme_candidate_count: int = 3
     theme_relevance_calibration_path: str | None = None
+    theme_provisional_auto_decision_enabled: bool = True
+    theme_provisional_decision_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
     chapter_representative_photo_count: int = 3
     chapter_naming_max_parallel: int = 2
     chapter_feature_version: str = "c4-image-embedding-only-v1"

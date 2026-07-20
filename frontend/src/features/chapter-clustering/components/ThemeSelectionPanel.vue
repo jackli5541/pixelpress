@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Check, Sparkles } from 'lucide-vue-next'
+import { ArrowLeft, Check, RefreshCw, Sparkles } from 'lucide-vue-next'
 import type { ChapterStrategy, ThemeCandidate } from '@/features/chapter-clustering/composables/useThemeCuration'
 
 const props = defineProps<{
@@ -40,6 +40,13 @@ function concepts(candidate: ThemeCandidate, key: 'include_concepts' | 'exclude_
     <button class="story-button-secondary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm" :disabled="!customTheme.trim() || loading" @click="emit('analyze', true)"><Sparkles :size="15" /> 解析自定义主题</button>
   </div>
   <div v-if="phase === 'choose_theme' || rechoosing" class="mt-6">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm font-semibold text-[#241c16]">候选主题</p>
+      <button class="story-button-secondary inline-flex items-center gap-2 px-3 py-2 text-xs" :disabled="loading" @click="emit('analyze', false)">
+        <RefreshCw :size="14" :class="loading ? 'animate-spin' : ''" />
+        重新生成候选
+      </button>
+    </div>
     <div v-if="fallbackUsed" class="mb-5 border-l-2 border-[#b98643] bg-[rgba(185,134,67,0.08)] px-4 py-3 text-xs leading-5 text-[#78695c]">智能主题生成失败，当前仅提供“完整记录”。如需使用自定义主题，请在上方输入主题并解析。</div>
     <div class="divide-y divide-[rgba(79,59,42,0.12)] border-y border-[rgba(79,59,42,0.12)]">
       <button v-for="candidate in candidates" :key="candidate.id" class="flex w-full items-start gap-3 px-2 py-4 text-left" @click="emit('choose', candidate)">

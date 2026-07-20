@@ -14,6 +14,13 @@ class ThemePipelineError(RuntimeError):
     pass
 
 
+_PRESET_THEME_SPECS = (
+    ("preset-travel-notes", "旅行见闻", "location_first"),
+    ("preset-family-gathering", "亲友相聚", "activity_first"),
+    ("preset-daily-moments", "日常片段", "balanced"),
+)
+
+
 def complete_record_candidate() -> dict[str, Any]:
     return {
         "id": "complete_record",
@@ -22,6 +29,54 @@ def complete_record_candidate() -> dict[str, Any]:
         "recommended_strategy": "balanced",
         "source": "system",
     }
+
+
+def fill_theme_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    candidate_count: int = 3,
+    custom_theme: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Deduplicate candidates and deterministically fill an incomplete AI result."""
+    target_count = max(0, int(candidate_count))
+    result: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+
+    def append(candidate: dict[str, Any]) -> bool:
+        title = str(candidate.get("title") or "").strip()
+        normalized_title = title.lower()
+        if not title or normalized_title in seen_titles or len(result) >= target_count:
+            return False
+        result.append({**candidate, "title": title})
+        seen_titles.add(normalized_title)
+        return True
+
+    for candidate in candidates:
+        append(candidate)
+
+    custom_value = str(custom_theme or "").strip()
+    if not result and custom_value:
+        append({
+            "id": "fallback-custom",
+            "title": custom_value,
+            "constraints": normalize_theme_constraints({}, custom_theme=custom_value),
+            "recommended_strategy": "balanced",
+            "source": "custom",
+        })
+
+    preset_candidate_count = 0
+    for candidate_id, title, strategy in _PRESET_THEME_SPECS:
+        if append({
+            "id": candidate_id,
+            "title": title,
+            "constraints": normalize_theme_constraints({"evidence": ["preset"]}),
+            "recommended_strategy": strategy,
+            "source": "preset",
+        }):
+            preset_candidate_count += 1
+        if len(result) >= target_count:
+            break
+    return result, preset_candidate_count
 
 
 def summarize_theme_features(features: dict[str, dict]) -> dict[str, Any]:
