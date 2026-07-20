@@ -15,6 +15,16 @@ from app.services.secret_service import SecretService
 
 
 DEFAULT_STAGES = ("chapter", "chapter_embedding", "layout")
+STAGE_PROVIDERS = {
+    "chapter": {"openai_compatible"},
+    "chapter_embedding": {"dashscope_multimodal_embedding"},
+    "layout": {"openai_compatible"},
+}
+
+
+def validate_stage_provider(stage: str, provider_type: str) -> None:
+    if stage not in DEFAULT_STAGES or provider_type not in STAGE_PROVIDERS[stage]:
+        raise ValueError(f"unsupported provider for {stage}: {provider_type}")
 
 
 class DefaultAIProviderConfigService:
@@ -42,14 +52,14 @@ class DefaultAIProviderConfigService:
     async def ensure_defaults(self) -> list[dict]:
         settings = get_settings()
         values = {
-            "chapter": (settings.ai_provider_b2, settings.ai_model_b2),
-            "chapter_embedding": (settings.chapter_embedding_provider, settings.chapter_embedding_model),
-            "layout": (settings.ai_provider_b3, settings.ai_model_b3),
+            "chapter": settings.resolved_chapter_config,
+            "chapter_embedding": settings.resolved_embedding_config,
+            "layout": settings.resolved_layout_config,
         }
         changed = False
-        for stage, (provider_type, model) in values.items():
+        for stage, (provider_type, base_url, api_key, model) in values.items():
             existing = await self.repo.get_by_stage(stage)
-            inherited_embedding_key = settings.chapter_embedding_api_key or settings.llm_api_key or ""
+            inherited_embedding_key = settings.resolved_embedding_config[2] or ""
             if existing:
                 if stage == "chapter_embedding" and not existing.api_key_masked and inherited_embedding_key:
                     await self.repo.update(existing, {
@@ -58,16 +68,7 @@ class DefaultAIProviderConfigService:
                     })
                     changed = True
                 continue
-            api_key = (
-                settings.chapter_embedding_api_key or settings.llm_api_key
-                if stage == "chapter_embedding"
-                else settings.llm_api_key
-            ) or ""
-            base_url = (
-                settings.chapter_embedding_api_url
-                if stage == "chapter_embedding"
-                else settings.llm_api_url
-            )
+            api_key = api_key or ""
             await self.repo.create(
                 {
                     "stage": stage,
@@ -93,8 +94,10 @@ class DefaultAIProviderConfigService:
         config = await self.repo.get_by_stage(stage)
         if config is None:
             return None
+        provider_type = payload.get("provider_type", config.provider_type)
+        validate_stage_provider(stage, provider_type)
         updates = {
-            "provider_type": payload.get("provider_type", config.provider_type),
+            "provider_type": provider_type,
             "base_url": payload.get("base_url", config.base_url),
             "model": payload.get("model", config.model),
             "is_active": payload.get("is_active", config.is_active),
