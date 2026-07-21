@@ -41,7 +41,7 @@ export interface ThemeAssessment<Photo> {
     negative_similarity?: number | null
     margin?: number | null
     calibration_version?: string
-    calibration_status?: 'ready' | 'missing' | 'disabled' | 'mismatch'
+    calibration_status?: 'bypassed' | 'ready' | 'missing' | 'disabled' | 'mismatch'
     decision_mode?: 'calibrated' | 'provisional_binary' | 'manual_review'
     provisional_threshold?: number | null
     model?: string | null
@@ -57,11 +57,11 @@ export interface ThemeWorkspace<Photo> {
   profile: ThemeProfile | null
   assessments: ThemeAssessment<Photo>[]
   calibration: {
-    status: 'ready' | 'missing' | 'disabled' | 'mismatch'
+    status: 'bypassed' | 'ready' | 'missing' | 'disabled' | 'mismatch'
     auto_decision_enabled: boolean
     decision_mode: 'calibrated' | 'provisional_binary' | 'manual_review'
     provisional_threshold: number | null
-    version: string
+    version: string | null
     provider: string
     model: string
     dimension: number

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.engines.theme_pipeline import complete_record_candidate
-from app.engines.theme_relevance_engine import QUERY_VERSION, SCORING_VERSION, load_calibration
+from app.engines.theme_relevance_engine import QUERY_VERSION, SCORING_VERSION
 from app.repositories.album_repo import AlbumRepository
 from app.repositories.theme_curation_repo import ThemeCurationRepository
 from app.services.chapter_feature_service import ChapterFeatureService
@@ -23,28 +23,15 @@ class ThemeWorkspaceBuilder:
         if album is None:
             return None
         settings = get_settings()
-        calibration = load_calibration(settings.theme_relevance_calibration_path)
+        calibration = None
         try:
             connection = await self.feature_service.resolve_embedding_connection()
             provider, model = connection.provider, connection.model
         except Exception:  # noqa: BLE001
             provider, model = settings.chapter_embedding_provider, settings.chapter_embedding_model
-        calibration_status = calibration.compatibility_status(
-            provider=provider,
-            model=model,
-            dimension=settings.chapter_embedding_dimension,
-        )
-        provisional_enabled = (
-            settings.theme_provisional_auto_decision_enabled
-            and calibration_status in {"missing", "disabled"}
-        )
-        decision_mode = (
-            "calibrated"
-            if calibration_status == "ready"
-            else "provisional_binary"
-            if provisional_enabled
-            else "manual_review"
-        )
+        calibration_status = "bypassed"
+        provisional_enabled = settings.theme_provisional_auto_decision_enabled
+        decision_mode = "provisional_binary" if provisional_enabled else "manual_review"
         calibration_payload = {
             "status": calibration_status,
             "auto_decision_enabled": calibration_status == "ready" or provisional_enabled,
@@ -52,7 +39,7 @@ class ThemeWorkspaceBuilder:
             "provisional_threshold": (
                 settings.theme_provisional_decision_threshold if provisional_enabled else None
             ),
-            "version": calibration.version,
+            "version": None,
             "provider": provider,
             "model": model,
             "dimension": settings.chapter_embedding_dimension,

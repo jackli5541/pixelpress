@@ -18,7 +18,7 @@ from app.engines.theme_pipeline import (
     selected_theme_text,
     summarize_theme_features,
 )
-from app.engines.theme_relevance_engine import ThemeQuery, ThemeRelevanceEngine, load_calibration
+from app.engines.theme_relevance_engine import ThemeQuery, ThemeRelevanceEngine
 from app.repositories.album_repo import AlbumRepository
 from app.repositories.photo_repo import PhotoRepository
 from app.repositories.theme_curation_repo import ThemeCurationRepository
@@ -232,7 +232,7 @@ class ThemeCurationTaskRunner:
                     )
                 except Exception:  # noqa: BLE001
                     query = None
-            calibration = load_calibration(get_settings().theme_relevance_calibration_path)
+            calibration = None
             settings = get_settings()
             explicit_constraints = normalize_theme_constraints(
                 {},
