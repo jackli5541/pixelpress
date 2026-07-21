@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import ProtectedImage from '@/shared/components/ProtectedImage.vue'
 import SectionCard from '@/shared/components/SectionCard.vue'
 import { usePhotoDrag } from '@/shared/composables/usePhotoDrag'
+import { useProgressiveList } from '@/shared/composables/useProgressiveList'
 import type { ChapterItem, ChapterSegmentItem, PhotoItem } from '@/features/chapter-clustering/types'
 
 const ORPHAN_ID = '__orphan__'
@@ -20,10 +21,13 @@ const emit = defineEmits<{
 const expandedChapter = ref<string | null>(null)
 const editingChapter = ref<string | null>(null)
 const editName = ref('')
+const photoById = computed(() => new Map(props.photos.map((photo) => [photo.id, photo])))
 
-function getPhotos(ids: string[]) {
-  const idSet = new Set(ids)
-  return props.photos.filter((photo) => idSet.has(photo.id))
+function getPhotos(ids: string[]): PhotoItem[] {
+  return ids.flatMap((id) => {
+    const photo = photoById.value.get(id)
+    return photo ? [photo] : []
+  })
 }
 
 function getSegments(chapter: ChapterItem): ChapterSegmentItem[] {
@@ -54,6 +58,45 @@ function coverageLabel(chapter: ChapterItem) {
   return typeof value === 'number' ? `跨模态特征覆盖 ${Math.round(value * 100)}%` : ''
 }
 
+const expandedPhotos = computed(() => {
+  const chapter = props.chapters.find((item) => item.id === expandedChapter.value)
+  if (!chapter) return []
+  const seen = new Set<string>()
+  const orderedIds = getSegments(chapter).flatMap((segment) => segment.photo_ids)
+  return getPhotos(orderedIds.filter((id) => {
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  }))
+})
+const {
+  scrollRoot: expandedScrollRoot,
+  sentinel: expandedSentinel,
+  visibleItems: visibleExpandedPhotos,
+} = useProgressiveList(
+  expandedPhotos,
+  { resetKey: () => expandedChapter.value },
+)
+const visibleExpandedPhotoIds = computed(() => new Set(visibleExpandedPhotos.value.map((photo) => photo.id)))
+
+function setExpandedScrollRoot(element: unknown) {
+  expandedScrollRoot.value = element instanceof HTMLElement ? element : null
+}
+
+function setExpandedSentinel(element: unknown) {
+  expandedSentinel.value = element instanceof HTMLElement ? element : null
+}
+
+function getVisibleSegmentPhotos(ids: string[]) {
+  return getPhotos(ids.filter((id) => visibleExpandedPhotoIds.value.has(id)))
+}
+
+const {
+  scrollRoot: orphanScrollRoot,
+  sentinel: orphanSentinel,
+  visibleItems: visibleOrphanPhotos,
+} = useProgressiveList(() => props.orphanPhotos)
+
 const { isDragging, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, getDragPhotoClass, getDropTargetClass } = usePhotoDrag({
   onPhotoMove: async (photoId, targetId) => emit('move', photoId, targetId),
   orphanAreaId: ORPHAN_ID,
@@ -66,6 +109,7 @@ const { isDragging, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, get
     <article
       v-for="chapter in chapters"
       :key="chapter.id"
+      :data-chapter-id="chapter.id"
       class="story-panel overflow-hidden rounded-[28px]"
       :class="getDropTargetClass(chapter.id)"
       @dragover.prevent="(event: DragEvent) => onDragOver(event, chapter.id)"
@@ -104,31 +148,39 @@ const { isDragging, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, get
       </div>
       <div v-if="expandedChapter === chapter.id" class="border-t border-[rgba(224,177,106,0.14)] px-5 py-5">
         <div v-if="getPhotos(chapter.photo_ids).length === 0" class="rounded-[22px] border border-dashed border-[rgba(224,177,106,0.18)] px-5 py-10 text-center text-sm text-[var(--story-muted)]">这个章节还没有镜头。把照片拖拽到这里，或先运行自动整理。</div>
-        <div v-else class="space-y-6">
-          <section v-for="segment in getSegments(chapter)" :key="segment.id" class="border-t border-[rgba(224,177,106,0.12)] pt-4 first:border-t-0 first:pt-0">
-            <div class="mb-3 flex flex-wrap items-center gap-3">
-              <p class="text-sm font-medium text-[var(--story-text)]">{{ segment.name }}</p>
-              <span class="text-xs text-[var(--story-faint)]">{{ segment.time_range || segment.description }}</span>
-              <span v-if="segment.clustering?.needs_review" class="border-l border-[#b98643] pl-3 text-xs text-[var(--story-gold-soft)]">建议检查</span>
-            </div>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <article v-for="photo in getPhotos(segment.photo_ids)" :key="photo.id" class="film-frame overflow-hidden rounded-[22px] bg-[rgba(255,255,255,0.04)]" :class="getDragPhotoClass(photo.id)" draggable="true" @dragstart="(event: DragEvent) => onDragStart(event, photo.id, chapter.id)" @dragend="onDragEnd">
-                <ProtectedImage :src="photo.url" :alt="photo.filename" class="pointer-events-none h-44 w-full object-cover" />
-                <div class="px-3 py-3"><p class="truncate text-sm text-[var(--story-text)]">{{ photo.filename }}</p></div>
-              </article>
-            </div>
-          </section>
+        <div v-else :ref="setExpandedScrollRoot" class="progressive-photo-pool overflow-y-auto pr-2" tabindex="0" role="region" :aria-label="`${chapter.name}照片池`">
+          <div class="space-y-6">
+            <template v-for="segment in getSegments(chapter)" :key="segment.id">
+              <section v-if="getVisibleSegmentPhotos(segment.photo_ids).length" class="border-t border-[rgba(224,177,106,0.12)] pt-4 first:border-t-0 first:pt-0">
+                <div class="mb-3 flex flex-wrap items-center gap-3">
+                  <p class="text-sm font-medium text-[var(--story-text)]">{{ segment.name }}</p>
+                  <span class="text-xs text-[var(--story-faint)]">{{ segment.time_range || segment.description }}</span>
+                  <span v-if="segment.clustering?.needs_review" class="border-l border-[#b98643] pl-3 text-xs text-[var(--story-gold-soft)]">建议检查</span>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <article v-for="photo in getVisibleSegmentPhotos(segment.photo_ids)" :key="photo.id" :data-photo-id="photo.id" class="film-frame overflow-hidden rounded-[22px] bg-[rgba(255,255,255,0.04)]" :class="getDragPhotoClass(photo.id)" draggable="true" @dragstart="(event: DragEvent) => onDragStart(event, photo.id, chapter.id)" @dragend="onDragEnd">
+                    <ProtectedImage :src="photo.url" :alt="photo.filename" class="pointer-events-none h-44 w-full object-cover" />
+                    <div class="px-3 py-3"><p class="truncate text-sm text-[var(--story-text)]">{{ photo.filename }}</p></div>
+                  </article>
+                </div>
+              </section>
+            </template>
+          </div>
+          <div :ref="setExpandedSentinel" class="h-px" />
         </div>
       </div>
     </article>
   </div>
 
   <SectionCard v-if="orphanPhotos.length" title="待归档镜头" :description="`${orphanPhotos.length} 张照片还没有进入任何章节。`" tone="accent" eyebrow="Unassigned">
-    <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      <article v-for="photo in orphanPhotos" :key="photo.id" class="overflow-hidden rounded-[22px] border border-dashed border-[rgba(79,59,42,0.22)] bg-white/60" :class="getDragPhotoClass(photo.id)" draggable="true" @dragstart="(event: DragEvent) => onDragStart(event, photo.id, ORPHAN_ID)" @dragend="onDragEnd">
-        <ProtectedImage :src="photo.url" :alt="photo.filename" class="pointer-events-none h-36 w-full object-cover" />
-        <div class="px-3 py-3"><p class="truncate text-sm text-[#241c16]">{{ photo.filename }}</p></div>
-      </article>
+    <div ref="orphanScrollRoot" class="progressive-photo-pool overflow-y-auto pr-2" tabindex="0" role="region" aria-label="未分配镜头照片池">
+      <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <article v-for="photo in visibleOrphanPhotos" :key="photo.id" :data-photo-id="photo.id" class="overflow-hidden rounded-[22px] border border-dashed border-[rgba(79,59,42,0.22)] bg-white/60" :class="getDragPhotoClass(photo.id)" draggable="true" @dragstart="(event: DragEvent) => onDragStart(event, photo.id, ORPHAN_ID)" @dragend="onDragEnd">
+          <ProtectedImage :src="photo.url" :alt="photo.filename" class="pointer-events-none h-36 w-full object-cover" />
+          <div class="px-3 py-3"><p class="truncate text-sm text-[#241c16]">{{ photo.filename }}</p></div>
+        </article>
+      </div>
+      <div ref="orphanSentinel" class="h-px" />
     </div>
   </SectionCard>
 </template>

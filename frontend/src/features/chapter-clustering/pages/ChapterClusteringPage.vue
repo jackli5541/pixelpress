@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, RotateCcw } from 'lucide-vue-next'
+import { ArrowLeft } from 'lucide-vue-next'
 import SectionCard from '@/shared/components/SectionCard.vue'
 import StoryHero from '@/shared/components/StoryHero.vue'
 import WorkflowStepper from '@/shared/components/WorkflowStepper.vue'
@@ -9,6 +9,7 @@ import ThemePhotoReview from '@/features/chapter-clustering/components/ThemePhot
 import ChapterBoard from '@/features/chapter-clustering/components/ChapterBoard.vue'
 import ThemeSelectionPanel from '@/features/chapter-clustering/components/ThemeSelectionPanel.vue'
 import { useChapterPage } from '@/features/chapter-clustering/composables/useChapterPage'
+import { useProgressiveList } from '@/shared/composables/useProgressiveList'
 
 const {
   albumId, loading, actionLoading, errorMessage, successMessage, newChapterName, granularity,
@@ -24,6 +25,15 @@ const {
   applyThemeDecision, confirmThemeReview, startCluster, createChapter,
   renameChapter, deleteChapter, movePhoto, goBack, goNext,
 } = useChapterPage()
+
+const {
+  scrollRoot: archiveScrollRoot,
+  sentinel: archiveSentinel,
+  visibleItems: visibleArchivePhotos,
+} = useProgressiveList(
+  () => allPhotos.value,
+  { resetKey: () => `${albumId.value}:${themeWorkspace.value?.phase || ''}` },
+)
 </script>
 
 <template>
@@ -77,10 +87,16 @@ const {
         {{ errorMessage }}
       </p>
       <div
-        v-if="themeWorkspace.calibration.status !== 'ready'"
+        v-if="themeWorkspace.calibration.decision_mode === 'provisional_binary'"
         class="mt-4 border-l-2 border-[#b98643] bg-[rgba(185,134,67,0.08)] px-4 py-3 text-xs leading-5 text-[#65584e]"
       >
-        当前向量模型尚无可用标定，系统只按相似度排序，不会自动保留或移出照片。请完成待复核照片后再确认范围。
+        当前按临时阈值 {{ themeWorkspace.calibration.provisional_threshold?.toFixed(2) }} 自动保留或移出照片。技术异常照片仍会进入待复核。
+      </div>
+      <div
+        v-else-if="themeWorkspace.calibration.status !== 'ready'"
+        class="mt-4 border-l-2 border-[#b98643] bg-[rgba(185,134,67,0.08)] px-4 py-3 text-xs leading-5 text-[#65584e]"
+      >
+        当前向量模型无法自动判断照片范围，请完成待复核照片后再确认范围。
       </div>
 
       <ThemeSelectionPanel
@@ -94,7 +110,7 @@ const {
         :strategies="themeWorkspace.strategies"
         :strategy-labels="strategyLabels"
         :custom-theme="customTheme"
-        :loading="actionLoading"
+        :loading="actionLoading || ['queued', 'running'].includes(latestThemeTask?.task_status || '')"
         @analyze="startThemeAnalysis"
         @back="returnToThemeReview"
         @choose="chooseCandidate"
@@ -119,10 +135,9 @@ const {
         @confirm="confirmThemeReview"
       />
 
-      <div v-if="themeWorkspace.phase === 'ready_to_cluster'" class="ready-theme-summary mt-6 flex flex-wrap items-center gap-4 border-l-2 border-[#5b714d] pl-4 [&>button:nth-of-type(2)]:hidden">
+      <div v-if="themeWorkspace.phase === 'ready_to_cluster'" class="ready-theme-summary mt-6 flex flex-wrap items-center gap-4 border-l-2 border-[#5b714d] pl-4">
         <button class="story-button-secondary inline-flex items-center gap-2 px-4 py-2 text-xs" :disabled="actionLoading" @click="returnToThemeReview"><ArrowLeft :size="14" /> 返回照片确认</button>
         <div class="min-w-0 flex-1"><p class="text-sm font-semibold text-[#241c16]">{{ themeWorkspace.profile?.title || '完整记录' }}</p><p class="mt-1 text-xs text-[#78695c]">{{ strategyLabels[themeWorkspace.profile?.chapter_strategy || 'balanced'] }} · 已移出 {{ themeWorkspace.summary.excluded }} 张主题外照片</p></div>
-        <button class="story-button-secondary inline-flex items-center gap-2 px-4 py-2 text-xs" @click="startThemeAnalysis(false)"><RotateCcw :size="14" /> 更换主题</button>
       </div>
 
     </SectionCard>
@@ -134,11 +149,14 @@ const {
       tone="accent"
       eyebrow="Unassigned"
     >
-      <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <article v-for="photo in allPhotos" :key="photo.id" class="overflow-hidden rounded-lg border border-[rgba(79,59,42,0.14)] bg-white/70">
-          <ProtectedImage :src="photo.url" :alt="photo.filename" class="h-36 w-full object-cover" />
-          <div class="px-3 py-3"><p class="truncate text-sm text-[#241c16]">{{ photo.filename }}</p></div>
-        </article>
+      <div ref="archiveScrollRoot" class="progressive-photo-pool overflow-y-auto pr-2" tabindex="0" role="region" aria-label="待归档镜头照片池">
+        <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <article v-for="photo in visibleArchivePhotos" :key="photo.id" :data-photo-id="photo.id" class="overflow-hidden rounded-lg border border-[rgba(79,59,42,0.14)] bg-white/70">
+            <ProtectedImage :src="photo.url" :alt="photo.filename" class="h-36 w-full object-cover" />
+            <div class="px-3 py-3"><p class="truncate text-sm text-[#241c16]">{{ photo.filename }}</p></div>
+          </article>
+        </div>
+        <div ref="archiveSentinel" class="h-px" />
       </div>
     </SectionCard>
 

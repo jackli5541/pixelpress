@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import ValidationError
@@ -12,6 +13,22 @@ from app.core.config import get_settings
 
 class ChapterPipelineError(RuntimeError):
     pass
+
+
+_CALENDAR_PREFIX = re.compile(
+    r"^\s*(?:"
+    r"(?:\d{4}年)?\d{1,2}月\d{1,2}(?:日|号|[-—至到]\d{1,2}日)"
+    r"|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}"
+    r"|\d{4}年\d{1,2}月"
+    r"|\d{4}年"
+    r")\s*(?:[·:：,，\-—|]\s*)*"
+)
+
+
+def normalize_chapter_name(name: str, fallback: str) -> str:
+    original = name.strip()
+    without_calendar = _CALENDAR_PREFIX.sub("", original, count=1).strip(" ·:：,，-—|")
+    return without_calendar or fallback.strip() or "未命名章节"
 
 
 def _rounded_gps(photos: list[dict[str, Any]]) -> list[tuple[float, float]]:
@@ -37,7 +54,11 @@ def _build_user_prompt(chapter: dict[str, Any], photos: list[dict[str, Any]], im
     return (
         "请为一个已经由确定性算法完成分组的相册章节生成名称和一句摘要。\n"
         "你不能改变照片归属，也不能输出 photo_ids。不要识别或猜测人物身份；"
-        "不要仅凭坐标猜测具体地点；证据不足时使用时间范围作为保守名称。\n"
+        "不要仅凭坐标猜测具体地点。\n"
+        "名称应优先概括画面内容、活动、地点类型或氛围，简洁、自然、有区分度。"
+        "名称中不要写具体年月日，也不要机械复述 time_range；time_range 只用于理解先后顺序和生成摘要。"
+        "只有清晨、黄昏、傍晚、夜间等时段确实能区分章节时，名称才可以使用时段词。"
+        "证据不足时使用“沿途所见”“旅途片段”一类中性内容名称，不要使用日期作为名称。\n"
         "输出必须是 JSON：{\"chapter_key\": str, \"name\": str, \"description\": str}。\n\n"
         f"chapter_key={chapter['chapter_key']}\n"
         f"time_range={chapter.get('time_range')}\n"
@@ -80,4 +101,7 @@ async def name_chapter_with_ai(
         raise ChapterPipelineError(f"chapter narrative schema validation failed: {exc}") from exc
     if output.chapter_key != chapter["chapter_key"]:
         raise ChapterPipelineError("chapter narrative returned an unexpected chapter_key")
+    output = output.model_copy(update={
+        "name": normalize_chapter_name(output.name, str(chapter.get("name") or "")),
+    })
     return output, response.debug | {"provider": response.provider, "model": response.model}

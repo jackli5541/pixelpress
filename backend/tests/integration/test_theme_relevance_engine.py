@@ -49,7 +49,18 @@ def _query(vector: list[float], negative: list[float] | None = None) -> ThemeQue
     )
 
 
-def _score(vector, query, *, calibration=None, model="test-model", dimension=2, constraints=None, taken_at=None):  # noqa: ANN001
+def _score(
+    vector,
+    query,
+    *,
+    calibration=None,
+    model="test-model",
+    dimension=2,
+    constraints=None,
+    taken_at=None,
+    provisional_enabled=False,
+    provisional_threshold=0.60,
+):  # noqa: ANN001
     return score_photo_relevance(
         photo_id="photo",
         photo_vector=vector,
@@ -59,6 +70,8 @@ def _score(vector, query, *, calibration=None, model="test-model", dimension=2, 
         taken_at=taken_at,
         query=query,
         calibration=calibration or _calibration(),
+        provisional_auto_decision_enabled=provisional_enabled,
+        provisional_decision_threshold=provisional_threshold,
         constraints=constraints or {},
         feature_version="features-v1",
     )
@@ -141,6 +154,98 @@ def test_uncalibrated_scoring_keeps_raw_features_without_album_percentiles():
     assert result["evidence_json"]["raw_query_similarity"] == 1.0
     assert result["evidence_json"]["score_kind"] == "embedding_similarity_rank"
     assert result["evidence_json"]["calibration_status"] == "disabled"
+
+
+def test_provisional_binary_threshold_is_inclusive_and_records_evidence():
+    query = _query([1.0, 0.0])
+    keep = _score(
+        [0.2, 0.9797958971],
+        query,
+        calibration=_calibration(enabled=False),
+        provisional_enabled=True,
+    )
+    exclude = _score(
+        [0.1998, 0.9798367],
+        query,
+        calibration=_calibration(enabled=False),
+        provisional_enabled=True,
+    )
+    missing_calibration = RelevanceCalibration.from_dict({}, load_status="missing")
+    missing = _score(
+        [0.2, 0.9797958971],
+        query,
+        calibration=missing_calibration,
+        provisional_enabled=True,
+    )
+
+    assert keep["relevance_score"] == 0.6
+    assert keep["suggested_decision"] == "keep"
+    assert keep["relevance_label"] == "relevant"
+    assert keep["evidence_json"]["decision_mode"] == "provisional_binary"
+    assert keep["evidence_json"]["provisional_threshold"] == 0.6
+    assert exclude["relevance_score"] == 0.5999
+    assert exclude["suggested_decision"] == "exclude"
+    assert exclude["relevance_label"] == "off_theme"
+    assert missing["suggested_decision"] == "keep"
+    assert missing["evidence_json"]["calibration_status"] == "missing"
+
+
+def test_calibrated_and_technical_review_paths_override_provisional_decisions():
+    query = _query([1.0, 0.0])
+    calibrated = _score(
+        [0.6, 0.8],
+        query,
+        provisional_enabled=True,
+        provisional_threshold=0.95,
+    )
+    mismatch = _score(
+        [1.0, 0.0],
+        query,
+        calibration=_calibration(enabled=False),
+        model="other-model",
+        provisional_enabled=True,
+    )
+    invalid = _score(
+        [0.0, 0.0],
+        query,
+        calibration=_calibration(enabled=False),
+        provisional_enabled=True,
+    )
+    calibration_mismatch = _score(
+        [1.0, 0.0],
+        query,
+        calibration=_calibration(provider="other-provider"),
+        provisional_enabled=True,
+    )
+
+    assert calibrated["suggested_decision"] == "keep"
+    assert calibrated["evidence_json"]["decision_mode"] == "calibrated"
+    assert calibrated["evidence_json"]["provisional_threshold"] is None
+    assert mismatch["suggested_decision"] == "review"
+    assert invalid["suggested_decision"] == "review"
+    assert calibration_mismatch["suggested_decision"] == "review"
+    assert calibration_mismatch["evidence_json"]["decision_mode"] == "manual_review"
+
+
+def test_provisional_time_constraints_review_missing_time_and_exclude_mismatch():
+    query = _query([1.0, 0.0])
+    common = {
+        "calibration": _calibration(enabled=False),
+        "constraints": {"time": {"years": [2026]}},
+        "provisional_enabled": True,
+    }
+    missing = _score([1.0, 0.0], query, **common)
+    outside = _score(
+        [1.0, 0.0],
+        query,
+        taken_at=datetime(2025, 12, 31, tzinfo=UTC),
+        **common,
+    )
+
+    assert missing["suggested_decision"] == "review"
+    assert "missing_capture_time" in missing["reasons_json"]
+    assert outside["suggested_decision"] == "exclude"
+    assert "outside_requested_year" in outside["reasons_json"]
 
 
 def test_query_features_keep_raw_expansion_and_negative_scores_separate():
