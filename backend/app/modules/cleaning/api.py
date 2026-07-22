@@ -1,4 +1,7 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi.util import get_remote_address
 
@@ -8,14 +11,34 @@ from app.core.rate_limit import limiter
 from app.auth.ownership import require_album_access
 from app.common.responses import success_response
 from app.db.session import get_db
-from app.services.cleaning_service import CleaningService
+from app.services.cleaning_service import CleaningRevisionConflictError, CleaningService
 from app.services.task_service import TaskConflictError
 
 router = APIRouter(prefix="/albums/{album_id}/clean", tags=["cleaning"])
 
 
+class CleaningDecisionPayload(BaseModel):
+    photo_ids: list[str] = Field(min_length=1, max_length=200)
+    decision: Literal["keep", "remove"] | None
+    expected_content_revision: int | None = Field(default=None, ge=0)
+
+
+class CleaningReviewResolvePayload(BaseModel):
+    review_item_id: str = Field(min_length=7, max_length=128)
+    action: Literal["keep", "remove", "accept_preferred", "keep_all"]
+    expected_content_revision: int | None = Field(default=None, ge=0)
+
+
+class CleaningReviewResolveRemainingPayload(BaseModel):
+    expected_content_revision: int | None = Field(default=None, ge=0)
+
+
+class CleaningResetPayload(BaseModel):
+    clear_user_decisions: bool = False
+
+
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_task_trigger, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_task_trigger, key_func=get_remote_address)
 async def start_cleaning(request: Request, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """启动照片清洗：对相册中所有照片进行质量分析。"""
     await require_album_access(db, user, album_id)
@@ -28,11 +51,88 @@ async def start_cleaning(request: Request, album_id: str, db: AsyncSession = Dep
     return success_response({"task": task, "status_url": f"/api/v1/albums/{album_id}/tasks/{task['id']}"}, "cleaning queued")
 
 
+@router.get("/results")
+async def get_cleaning_results(album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+    await require_album_access(db, user, album_id)
+    result = await CleaningService(db).get_results(album_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="album not found")
+    return success_response(result)
+
+
+@router.patch("/decisions")
+async def update_cleaning_decisions(payload: CleaningDecisionPayload, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+    await require_album_access(db, user, album_id)
+    try:
+        result = await CleaningService(db).apply_decisions(
+            album_id,
+            payload.photo_ids,
+            payload.decision,
+            expected_content_revision=payload.expected_content_revision,
+        )
+    except CleaningRevisionConflictError as exc:
+        raise HTTPException(status_code=409, detail={"message": "content revision conflict", "current_revision": exc.current_revision}) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="album not found")
+    return success_response(result, "cleaning decisions updated")
+
+
+@router.post("/review/resolve")
+async def resolve_cleaning_review(payload: CleaningReviewResolvePayload, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+    await require_album_access(db, user, album_id)
+    try:
+        result = await CleaningService(db).resolve_review_item(
+            album_id,
+            payload.review_item_id,
+            payload.action,
+            expected_content_revision=payload.expected_content_revision,
+        )
+    except CleaningRevisionConflictError as exc:
+        raise HTTPException(status_code=409, detail={"message": "content revision conflict", "current_revision": exc.current_revision}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="album not found")
+    return success_response(result, "cleaning review resolved")
+
+
+@router.post("/review/resolve-remaining")
+async def resolve_remaining_cleaning_reviews(
+    payload: CleaningReviewResolveRemainingPayload,
+    album_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    await require_album_access(db, user, album_id)
+    try:
+        result = await CleaningService(db).resolve_remaining_reviews(
+            album_id,
+            expected_content_revision=payload.expected_content_revision,
+        )
+    except CleaningRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "content revision conflict", "current_revision": exc.current_revision},
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="album not found")
+    return success_response(result, "remaining cleaning reviews resolved")
+
+
+@router.post("/groups/{group_id}/accept-preferred")
+async def accept_group_preferred(group_id: str, album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+    await require_album_access(db, user, album_id)
+    result = await CleaningService(db).accept_group_preferred(album_id, group_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="duplicate group not found")
+    return success_response(result, "preferred photo accepted")
+
+
 @router.post("/reset")
-async def reset_cleaning(album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
+async def reset_cleaning(album_id: str, payload: CleaningResetPayload | None = None, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """重置清洗结果，将相册回退到 uploaded 状态。"""
     await require_album_access(db, user, album_id)
-    album = await CleaningService(db).reset_cleaning(album_id)
+    album = await CleaningService(db).reset_cleaning(album_id, clear_user_decisions=bool(payload and payload.clear_user_decisions))
     if album is None:
         raise HTTPException(status_code=404, detail="album not found")
     return success_response(album, "cleaning reset")

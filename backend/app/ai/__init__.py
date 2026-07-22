@@ -1,8 +1,9 @@
-from app.ai.factory import get_ai_provider
-from app.ai.schemas import ChapterClusterOutput, LayoutRecommendationOutput
+from app.ai.factory import get_ai_provider, get_multimodal_embedding_provider
+from app.ai.schemas import ChapterNarrativeOutput, LayoutRecommendationOutput
 
 __all__ = [
-    "ChapterClusterOutput",
+    "ChapterNarrativeOutput",
     "LayoutRecommendationOutput",
     "get_ai_provider",
+    "get_multimodal_embedding_provider",
 ]

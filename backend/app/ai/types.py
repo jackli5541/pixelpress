@@ -42,3 +42,35 @@ class ProviderResponse:
     model: str
     provider: str
     debug: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ImageEmbeddingRequest:
+    images: list[ImagePayload]
+    model: str
+    dimension: int = 512
+    connection: ProviderConnectionConfig | None = None
+
+
+@dataclass(slots=True)
+class ImageEmbeddingResponse:
+    embeddings: list[list[float]]
+    model: str
+    provider: str
+    debug: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class TextEmbeddingRequest:
+    texts: list[str]
+    model: str
+    dimension: int = 512
+    connection: ProviderConnectionConfig | None = None
+
+
+@dataclass(slots=True)
+class TextEmbeddingResponse:
+    embeddings: list[list[float]]
+    model: str
+    provider: str
+    debug: dict[str, Any] = field(default_factory=dict)

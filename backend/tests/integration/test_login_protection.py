@@ -19,7 +19,7 @@ def test_login_locks_after_repeated_failures(client):
 
     locked = client.post("/api/v1/auth/login", json={"username": username, "password": password})
     assert locked.status_code == 429
-    assert locked.json()["detail"] == "too many login attempts, please try again later"
+    assert locked.json()["message"] == "too many login attempts, please try again later"
 
 
 def test_login_success_clears_failures(client):
@@ -37,5 +37,10 @@ def test_login_success_clears_failures(client):
     protection = LoginProtectionService()
     user_fail_key = protection._user_fail_key(username)
     ip_fail_key = protection._ip_fail_key("testclient")
-    assert asyncio.run(protection.redis.get(user_fail_key)) is None
-    assert asyncio.run(protection.redis.get(ip_fail_key)) is None
+    async def read_keys():
+        try:
+            return await protection.redis.mget(user_fail_key, ip_fail_key)
+        finally:
+            await protection.redis.aclose()
+
+    assert asyncio.run(read_keys()) == [None, None]

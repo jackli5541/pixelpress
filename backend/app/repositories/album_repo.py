@@ -6,8 +6,11 @@ from sqlalchemy.orm import selectinload
 
 from app.models.album import Album
 from app.models.chapter import Chapter
+from app.models.chapter_photo import ChapterPhoto
+from app.models.chapter_segment import ChapterSegment
 from app.models.export import Export
 from app.models.page import Page
+from app.models.page_photo import PagePhoto
 from app.models.photo import Photo
 
 
@@ -35,6 +38,10 @@ class AlbumRepository:
             .where(Album.id == album_id)
             .options(selectinload(Album.photos))
         )
+        return result.scalar_one_or_none()
+
+    async def get_album_for_update(self, album_id: str) -> Album | None:
+        result = await self.session.execute(select(Album).where(Album.id == album_id).with_for_update())
         return result.scalar_one_or_none()
 
     async def get_album_with_assets(self, album_id: str) -> Album | None:
@@ -98,7 +105,7 @@ class AlbumRepository:
         result = await self.session.execute(
             select(Page)
             .where(Page.album_id == album_id)
-            .options(selectinload(Page.photo_links))
+            .options(selectinload(Page.photo_links).selectinload(PagePhoto.photo))
             .order_by(Page.page_number, Page.created_at)
         )
         return list(result.scalars().all())
@@ -107,7 +114,10 @@ class AlbumRepository:
         result = await self.session.execute(
             select(Chapter)
             .where(Chapter.album_id == album_id)
-            .options(selectinload(Chapter.photo_links))
+            .options(
+                selectinload(Chapter.photo_links).selectinload(ChapterPhoto.photo),
+                selectinload(Chapter.segments).selectinload(ChapterSegment.photo_links),
+            )
             .order_by(Chapter.order_index, Chapter.created_at)
         )
         return list(result.scalars().all())

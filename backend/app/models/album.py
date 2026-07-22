@@ -22,6 +22,7 @@ class Album(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     photo_count: Mapped[int] = mapped_column(default=0, nullable=False)
     print_spec_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     content_revision: Mapped[int] = mapped_column(default=0, nullable=False)
+    theme_input_revision: Mapped[int] = mapped_column(default=0, nullable=False)
     render_revision: Mapped[int] = mapped_column(default=0, nullable=False)
     preview_html_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     print_html_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -33,4 +34,10 @@ class Album(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     chapters = relationship("Chapter", back_populates="album", cascade="all, delete-orphan")
     pages = relationship("Page", back_populates="album", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="album", cascade="all, delete-orphan")
+    theme_profiles = relationship(
+        "AlbumThemeProfile",
+        back_populates="album",
+        cascade="all, delete-orphan",
+        order_by="AlbumThemeProfile.created_at",
+    )
     exports = relationship("Export", back_populates="album", cascade="all, delete-orphan")

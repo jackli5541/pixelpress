@@ -6,7 +6,7 @@ from .helpers import create_auth_headers, run_task_worker
 def test_tasks_require_admin_authentication(client):
     response = client.get("/api/v1/tasks")
     assert response.status_code == 401
-    assert response.json()["detail"] == "Not authenticated"
+    assert response.json()["message"] == "Not authenticated"
 
 
 def test_tasks_can_be_filtered_by_album_id(client):
@@ -48,4 +48,4 @@ def test_task_lookup_404_for_missing_task(client):
     headers = create_auth_headers(client, username="admin1", password="secret", role="admin")
     response = client.get("/api/v1/tasks/00000000-0000-0000-0000-000000000001", headers=headers)
     assert response.status_code == 404
-    assert response.json()["detail"] == "task not found"
+    assert response.json()["message"] == "task not found"

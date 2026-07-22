@@ -25,6 +25,7 @@ class UpdateProjectPayload(BaseModel):
 
 
 class CreateAIConfigPayload(BaseModel):
+    stage: str
     provider_type: str = "openai_compatible"
     base_url: str | None = None
     model: str
@@ -35,6 +36,7 @@ class CreateAIConfigPayload(BaseModel):
 
 
 class UpdateAIConfigPayload(BaseModel):
+    stage: str | None = None
     provider_type: str | None = None
     base_url: str | None = None
     model: str | None = None
@@ -114,7 +116,10 @@ async def list_default_ai_configs(db: AsyncSession = Depends(get_db), user=Depen
 async def update_default_ai_config(stage: str, payload: UpdateDefaultAIConfigPayload, db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
     if stage not in DEFAULT_STAGES:
         raise HTTPException(status_code=404, detail="default config stage not found")
-    updated = await DefaultAIProviderConfigService(db).update_config(stage, payload.model_dump(exclude_none=True), admin_user_id=user.id)
+    try:
+        updated = await DefaultAIProviderConfigService(db).update_config(stage, payload.model_dump(exclude_none=True), admin_user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail="default config stage not found")
     await AdminAuditService(db).log(
@@ -159,7 +164,10 @@ async def create_ai_config(project_id: str, payload: CreateAIConfigPayload, db: 
     project = await ProjectRepository(db).get_project(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
-    created = await ProjectAIConfigService(db).create_config(project_id, payload.model_dump(), admin_user_id=user.id)
+    try:
+        created = await ProjectAIConfigService(db).create_config(project_id, payload.model_dump(), admin_user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     await AdminAuditService(db).log(
         admin_user_id=user.id,
         action="create_ai_config",
@@ -173,7 +181,10 @@ async def create_ai_config(project_id: str, payload: CreateAIConfigPayload, db: 
 
 @router.patch("/ai-configs/{config_id}")
 async def update_ai_config(config_id: str, payload: UpdateAIConfigPayload, db: AsyncSession = Depends(get_db), user=Depends(require_admin)) -> dict:
-    updated = await ProjectAIConfigService(db).update_config(config_id, payload.model_dump(exclude_none=True), admin_user_id=user.id)
+    try:
+        updated = await ProjectAIConfigService(db).update_config(config_id, payload.model_dump(exclude_none=True), admin_user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail="config not found")
     await AdminAuditService(db).log(

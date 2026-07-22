@@ -188,3 +188,16 @@ textarea {
   background-image: radial-gradient(rgba(217, 173, 108, 0.14) 0.9px, transparent 0.9px);
   background-size: 15px 15px;
 }
+
+.progressive-photo-pool {
+  height: clamp(480px, 68vh, 760px);
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  .progressive-photo-pool {
+    height: 70vh;
+    min-height: 360px;
+  }
+}

@@ -20,6 +20,7 @@ export interface AdminUserSummary {
 export interface AIConfigSummary {
   id: string
   project_id: string
+  stage: 'chapter' | 'chapter_embedding' | 'layout' | null
   provider_type: string
   base_url: string | null
   model: string
@@ -53,5 +54,5 @@ export interface AIConfigTestResult {
 }
 
 export interface DefaultAIConfigSummary extends Omit<AIConfigSummary, 'project_id' | 'created_by_admin_id' | 'updated_by_admin_id'> {
-  stage: 'chapter' | 'layout'
+  stage: 'chapter' | 'chapter_embedding' | 'layout'
 }

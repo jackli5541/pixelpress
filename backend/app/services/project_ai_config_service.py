@@ -9,7 +9,7 @@ from app.repositories.album_repo import AlbumRepository
 from app.repositories.project_repo import ProjectRepository
 from app.services.project_service import ProjectService
 from app.services.secret_service import SecretService
-from app.services.default_ai_provider_config_service import DefaultAIProviderConfigService
+from app.services.default_ai_provider_config_service import DEFAULT_STAGES, DefaultAIProviderConfigService, validate_stage_provider
 
 
 class ProjectAIConfigService:
@@ -26,6 +26,7 @@ class ProjectAIConfigService:
         return {
             "id": config.id,
             "project_id": config.project_id,
+            "stage": config.stage,
             "provider_type": config.provider_type,
             "base_url": config.base_url,
             "model": config.model,
@@ -43,9 +44,13 @@ class ProjectAIConfigService:
         return [self.serialize(item) for item in await self.config_repo.list_project_configs(project_id)]
 
     async def create_config(self, project_id: str, payload: dict, *, admin_user_id: str | None = None) -> dict:
+        if payload.get("stage") not in DEFAULT_STAGES:
+            raise ValueError("invalid ai configuration stage")
+        validate_stage_provider(payload["stage"], payload["provider_type"])
         config = await self.config_repo.create_config(
             {
                 "project_id": project_id,
+                "stage": payload["stage"],
                 "provider_type": payload["provider_type"],
                 "base_url": payload.get("base_url"),
                 "model": payload["model"],
@@ -66,6 +71,7 @@ class ProjectAIConfigService:
         if config is None:
             return None
         updates = {
+            "stage": payload.get("stage", config.stage),
             "provider_type": payload.get("provider_type", config.provider_type),
             "base_url": payload.get("base_url", config.base_url),
             "model": payload.get("model", config.model),
@@ -74,6 +80,9 @@ class ProjectAIConfigService:
             "remark": payload.get("remark", config.remark),
             "updated_by_admin_id": admin_user_id,
         }
+        if updates["stage"] not in DEFAULT_STAGES:
+            raise ValueError("invalid ai configuration stage")
+        validate_stage_provider(updates["stage"], updates["provider_type"])
         if payload.get("api_key"):
             updates["api_key_ciphertext"] = self.secret_service.encrypt_api_key(payload["api_key"])
             updates["api_key_masked"] = self.secret_service.mask_api_key(payload["api_key"])
@@ -87,7 +96,7 @@ class ProjectAIConfigService:
             raise ValueError("album not found")
         project_id = await self.project_service.ensure_album_project(album)
         if project_id:
-            active = await self.config_repo.get_active_config(project_id)
+            active = await self.config_repo.get_active_config(project_id, stage)
             if active is not None:
                 return ProviderConnectionConfig(
                     provider=active.provider_type,

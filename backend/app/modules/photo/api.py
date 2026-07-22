@@ -1,11 +1,12 @@
 from pathlib import Path
 
+from typing import Literal
+
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from slowapi.util import get_remote_address
 
 from app.core.config import get_settings
-from app.core.rate_limit import limiter
+from app.core.rate_limit import get_authenticated_album_key, limiter
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +19,7 @@ from app.storage.file_store import get_file_storage
 
 
 class UpdatePhotoPayload(BaseModel):
-    cleaning_recommendation: str | None = None  # "keep" | "remove"
+    cleaning_recommendation: Literal["keep", "remove"] | None = None
     custom_caption: str | None = None
     scene_tags: list[str] | None = None
 
@@ -35,8 +36,8 @@ def _validate_upload_request(files: list[UploadFile]) -> None:
 async def list_photos(album_id: str, recommendation: str = "all", db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """列出照片。recommendation 参数：
     - "all"（默认）：返回全部照片
-    - "keep"：仅返回建议保留的照片（cleaning_recommendation 为 "keep" 或 null）
-    - "remove"：仅返回建议移除的照片
+    - "keep"：返回未被实际排除的照片
+    - "remove"：返回用户或高置信规则已排除的照片
     """
     await require_album_access(db, user, album_id)
     service = PhotoService(db)
@@ -56,7 +57,7 @@ async def get_photo(album_id: str, photo_id: str, db: AsyncSession = Depends(get
 
 
 @router.post("/upload")
-@limiter.limit(get_settings().rate_limit_upload, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_upload, key_func=get_authenticated_album_key)
 async def upload_photos(request: Request, album_id: str, files: list[UploadFile] = File(...), db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     await require_album_access(db, user, album_id)
     if not files:
@@ -77,7 +78,15 @@ async def upload_photos(request: Request, album_id: str, files: list[UploadFile]
 async def update_photo(album_id: str, photo_id: str, payload: UpdatePhotoPayload, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     """更新照片元数据（清洗建议、说明文字、标签）。"""
     await require_album_access(db, user, album_id)
-    updated = await PhotoService(db).update_photo(album_id, photo_id, payload.model_dump(exclude_none=True))
+    updates = payload.model_dump(exclude_none=True)
+    legacy_decision = updates.pop("cleaning_recommendation", None)
+    if legacy_decision is not None:
+        from app.services.cleaning_service import CleaningService
+
+        decision_result = await CleaningService(db).apply_decisions(album_id, [photo_id], legacy_decision)
+        if decision_result is None or decision_result["missing_photo_ids"]:
+            raise HTTPException(status_code=404, detail="photo not found")
+    updated = await PhotoService(db).update_photo(album_id, photo_id, updates) if updates else await PhotoService(db).get_photo(album_id, photo_id)
     if updated is None:
         raise HTTPException(status_code=404, detail="photo not found")
     return success_response(updated, "photo updated")

@@ -61,9 +61,9 @@ class PhotoService:
         photos = await self.photo_repo.list_photos(album_id)
         serialized = [serialize_photo(photo) for photo in photos]
         if recommendation == "keep":
-            serialized = [p for p in serialized if p.get("cleaning_recommendation") != "remove"]
+            serialized = [p for p in serialized if p.get("cleaning", {}).get("decision") != "remove"]
         elif recommendation == "remove":
-            serialized = [p for p in serialized if p.get("cleaning_recommendation") == "remove"]
+            serialized = [p for p in serialized if p.get("cleaning", {}).get("decision") == "remove"]
         return {"album_id": album_id, "count": len(serialized), "items": serialized}
 
     async def get_photo(self, album_id: str, photo_id: str):
@@ -148,6 +148,7 @@ class PhotoService:
 
         album.photo_count = len(await self.photo_repo.list_photos(album_id))
         album.content_revision += 1
+        album.theme_input_revision += 1
         await self._clear_render_artifacts(album)
         album.status = AlbumStatus.UPLOADED
         await self.session.commit()
@@ -181,6 +182,7 @@ class PhotoService:
         album = await self.album_repo.get_album(album_id)
         if album is not None:
             album.content_revision += 1
+            album.theme_input_revision += 1
             await self._clear_render_artifacts(album)
         await self.session.commit()
         return serialize_photo(updated)
@@ -196,6 +198,7 @@ class PhotoService:
         if album is not None:
             album.photo_count = len(await self.photo_repo.list_photos(album_id))
             album.content_revision += 1
+            album.theme_input_revision += 1
             await self._clear_render_artifacts(album)
         await self.session.commit()
         return True

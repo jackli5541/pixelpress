@@ -11,6 +11,8 @@ class AIProviderConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "ai_provider_configs"
 
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    # NULL preserves the behavior of configurations created before stage support.
+    stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider_type: Mapped[str] = mapped_column(String(64), nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     model: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -23,4 +25,3 @@ class AIProviderConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     updated_by_admin_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     project = relationship("Project", back_populates="ai_provider_configs")
-

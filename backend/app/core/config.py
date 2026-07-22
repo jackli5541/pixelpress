@@ -64,13 +64,25 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_login: str = "5/minute"
     rate_limit_register: str = "10/hour"
-    rate_limit_upload: str = "20/minute"
+    rate_limit_upload: str = "120/minute"
     rate_limit_task_trigger: str = "10/minute"
     rate_limit_export: str = "10/minute"
     ai_enabled: bool = False
     ai_provider_b1: str = ""
     ai_provider_b2: str = "openai_compatible"
     ai_provider_b3: str = "openai_compatible"
+    ai_chapter_provider: str | None = None
+    ai_chapter_api_url: str | None = None
+    ai_chapter_api_key: str | None = None
+    ai_chapter_model: str | None = None
+    ai_layout_provider: str | None = None
+    ai_layout_api_url: str | None = None
+    ai_layout_api_key: str | None = None
+    ai_layout_model: str | None = None
+    ai_chapter_embedding_provider: str | None = None
+    ai_chapter_embedding_api_url: str | None = None
+    ai_chapter_embedding_api_key: str | None = None
+    ai_chapter_embedding_model: str | None = None
     ai_mode_b1: str = "hybrid"
     ai_mode_b2: str = "llm"
     ai_mode_b3: str = "llm"
@@ -88,6 +100,35 @@ class Settings(BaseSettings):
     ai_image_max_edge: int = 1800
     ai_debug_persist: bool = True
     run_live_ai_tests: bool = False
+    cleaning_pipeline_version: str = "b2-local-v3"
+    cleaning_analysis_max_parallel: int = 3
+    cleaning_rollout_percent: int = 100
+    cleaning_auto_exclude_mode: str = "exact_and_clear_quality"
+    cleaning_hard_blur_mode: str = "shadow"
+    cleaning_hard_blur_rollout_percent: int = 0
+    cleaning_face_analysis_enabled: bool = True
+    cleaning_face_max_parallel: int = 1
+    cleaning_face_detector_model_path: str = "models/cleaning/blaze_face_full_range_sparse.tflite"
+    cleaning_face_landmarker_model_path: str = "models/cleaning/face_landmarker.task"
+    cleaning_anime_face_enabled: bool = True
+    cleaning_anime_face_model_path: str = "models/cleaning/anime-face_yolov3.onnx"
+    cleaning_pose_experiment_enabled: bool = False
+    cleaning_pose_model_path: str = "models/cleaning/pose_landmarker_lite.task"
+    theme_curation_enabled: bool = True
+    theme_pipeline_version: str = "theme-curation-v7-embedding-only"
+    theme_candidate_count: int = 3
+    theme_relevance_calibration_path: str | None = None
+    theme_provisional_auto_decision_enabled: bool = True
+    theme_provisional_decision_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    chapter_representative_photo_count: int = 3
+    chapter_naming_max_parallel: int = 2
+    chapter_feature_version: str = "c4-image-embedding-only-v1"
+    chapter_embedding_provider: str = "dashscope_multimodal_embedding"
+    chapter_embedding_api_url: str = "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
+    chapter_embedding_api_key: str | None = None
+    chapter_embedding_model: str = "qwen3-vl-embedding"
+    chapter_embedding_dimension: int = 512
+    chapter_embedding_batch_size: int = 8
     observability_log_level: str = "INFO"
     observability_json_logs: bool = True
     sentry_dsn: str | None = None
@@ -97,6 +138,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @field_validator("cors_allow_origins", mode="before")
@@ -119,6 +161,24 @@ class Settings(BaseSettings):
             raise ValueError("UPLOAD_MAX_IMAGE_PIXELS must be positive")
         if self.upload_max_files_per_request <= 0:
             raise ValueError("UPLOAD_MAX_FILES_PER_REQUEST must be positive")
+        if self.cleaning_analysis_max_parallel <= 0:
+            raise ValueError("CLEANING_ANALYSIS_MAX_PARALLEL must be positive")
+        if not 0 <= self.cleaning_rollout_percent <= 100:
+            raise ValueError("CLEANING_ROLLOUT_PERCENT must be between 0 and 100")
+        if self.cleaning_auto_exclude_mode not in {"off", "exact_only", "exact_and_clear_quality"}:
+            raise ValueError("CLEANING_AUTO_EXCLUDE_MODE must be off, exact_only, or exact_and_clear_quality")
+        if self.cleaning_hard_blur_mode not in {"shadow", "enforce"}:
+            raise ValueError("CLEANING_HARD_BLUR_MODE must be shadow or enforce")
+        if not 0 <= self.cleaning_hard_blur_rollout_percent <= 100:
+            raise ValueError("CLEANING_HARD_BLUR_ROLLOUT_PERCENT must be between 0 and 100")
+        if self.cleaning_face_max_parallel <= 0:
+            raise ValueError("CLEANING_FACE_MAX_PARALLEL must be positive")
+        if not 1 <= self.theme_candidate_count <= 5:
+            raise ValueError("THEME_CANDIDATE_COUNT must be between 1 and 5")
+        if not 1 <= self.chapter_representative_photo_count <= 3:
+            raise ValueError("CHAPTER_REPRESENTATIVE_PHOTO_COUNT must be between 1 and 3")
+        if self.chapter_naming_max_parallel <= 0:
+            raise ValueError("CHAPTER_NAMING_MAX_PARALLEL must be positive")
         if self.auth_login_max_failures <= 0:
             raise ValueError("AUTH_LOGIN_MAX_FAILURES must be positive")
         if self.auth_login_lockout_seconds <= 0:
@@ -151,6 +211,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() == "production"
+
+    @property
+    def resolved_chapter_config(self) -> tuple[str, str | None, str | None, str]:
+        return (self.ai_chapter_provider or self.ai_provider_b2, self.ai_chapter_api_url or self.llm_api_url, self.ai_chapter_api_key or self.llm_api_key, self.ai_chapter_model or self.ai_model_b2)
+
+    @property
+    def resolved_layout_config(self) -> tuple[str, str | None, str | None, str]:
+        return (self.ai_layout_provider or self.ai_provider_b3, self.ai_layout_api_url or self.llm_api_url, self.ai_layout_api_key or self.llm_api_key, self.ai_layout_model or self.ai_model_b3)
+
+    @property
+    def resolved_embedding_config(self) -> tuple[str, str | None, str | None, str]:
+        return (self.ai_chapter_embedding_provider or self.chapter_embedding_provider, self.ai_chapter_embedding_api_url or self.chapter_embedding_api_url, self.ai_chapter_embedding_api_key or self.chapter_embedding_api_key or self.llm_api_key, self.ai_chapter_embedding_model or self.chapter_embedding_model)
 
     @property
     def resolved_cors_allow_origins(self) -> list[str]:
