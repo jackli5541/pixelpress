@@ -7,6 +7,7 @@ from app.auth.ownership import require_album_access
 from app.common.responses import success_response
 from app.db.session import get_db
 from app.services.album_service import AlbumService
+from app.services.layout_service import LayoutService
 from app.services.task_service import TaskService
 
 router = APIRouter(prefix="/albums", tags=["albums"])
@@ -102,8 +103,8 @@ async def list_album_chapters(album_id: str, db: AsyncSession = Depends(get_db),
 @router.get("/{album_id}/pages")
 async def list_album_pages(album_id: str, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)) -> dict:
     await require_album_access(db, user, album_id)
-    service = AlbumService(db)
-    pages = await service.list_album_pages(album_id)
+    service = LayoutService(db)
+    pages = await service.list_pages(album_id)
     if pages is None:
         raise HTTPException(status_code=404, detail="album not found")
     return success_response(pages)

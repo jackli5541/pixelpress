@@ -10,6 +10,7 @@ import { usePhotoDrag } from '@/shared/composables/usePhotoDrag'
 import AlbumTaskStatusCard from '@/shared/components/AlbumTaskStatusCard.vue'
 import { useAlbumTaskMonitor } from '@/shared/composables/useAlbumTaskMonitor'
 import type { TaskItem } from '@/shared/types/album'
+import PageSpreadEditor, { type PageLayoutMeta } from '@/features/page-planning/components/PageSpreadEditor.vue'
 
 interface PhotoItem {
   id: string
@@ -28,6 +29,7 @@ interface PageItem {
   preview_snippet?: string
   preview_available?: boolean
   status: string
+  meta: PageLayoutMeta
 }
 
 interface ChapterItem {
@@ -35,11 +37,6 @@ interface ChapterItem {
   name: string
   description: string
   photo_ids: string[]
-}
-
-interface PreviewData {
-  album_id: string
-  html: string
 }
 
 const ORPHAN_ID = '__orphan__'
@@ -50,12 +47,13 @@ const pages = ref<PageItem[]>([])
 const allPhotos = ref<PhotoItem[]>([])
 const chapters = ref<ChapterItem[]>([])
 const albumStatus = ref('draft')
+const bookSize = ref('A4')
 const loading = ref(false)
 const actionLoading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-const previewHtml = ref('')
 const showPreview = ref(false)
+const savingPageId = ref('')
 const expandedChapter = ref<string | null>(null)
 const activeTaskType = ref<'plan_pages' | 'render_layout' | null>(null)
 
@@ -65,6 +63,7 @@ const albumId = computed(() => {
 })
 
 const needChapters = computed(() => ['draft', 'uploaded', 'cleaned'].includes(albumStatus.value))
+const pageAspectRatio = computed(() => bookSize.value === 'square_10inch' ? 1 : bookSize.value === 'A5' ? 148 / 210 : 210 / 297)
 
 const templateLabels: Record<string, string> = {
   full_page: '整页',
@@ -167,6 +166,7 @@ async function loadData() {
     allPhotos.value = photoResponse.data.items || []
     chapters.value = chapterResponse.data || []
     albumStatus.value = albumResponse.data?.status || 'draft'
+    bookSize.value = albumResponse.data?.book_size || 'A4'
   } catch (error: any) {
     errorMessage.value = error.message
   } finally {
@@ -222,6 +222,7 @@ async function changeTemplate(page: PageItem, template: string) {
   try {
     const response = await httpPatch<PageItem>(`/albums/${albumId.value}/pages/${page.id}`, { template })
     page.template = response.data.template
+    await loadData()
   } catch (error: any) {
     errorMessage.value = error.message
   }
@@ -259,14 +260,23 @@ async function deletePage(id: string) {
   }
 }
 
-async function loadPreview() {
-  if (!albumId.value) return
+function loadPreview() {
+  showPreview.value = !showPreview.value
+}
+
+async function savePageLayout(page: PageItem, meta: PageLayoutMeta) {
+  savingPageId.value = page.id
+  errorMessage.value = ''
   try {
-    const response = await httpGet<PreviewData>(`/albums/${albumId.value}/preview`)
-    previewHtml.value = response.data.html
-    showPreview.value = true
-  } catch {
-    errorMessage.value = '请先执行书页渲染，再查看整册预览。'
+    const response = await httpPatch<PageItem>(`/albums/${albumId.value}/pages/${page.id}`, { meta })
+    page.meta = response.data.meta
+    page.status = response.data.status
+    albumStatus.value = 'planned'
+  } catch (error: any) {
+    errorMessage.value = `排版未保存：${error.message}`
+    await loadData()
+  } finally {
+    if (savingPageId.value === page.id) savingPageId.value = ''
   }
 }
 
@@ -342,7 +352,7 @@ watch(
           渲染整册
         </button>
         <button class="story-button-secondary px-6 py-3 text-sm" :disabled="!albumId || !pages.length" @click="loadPreview">
-          查看整册预览
+          {{ showPreview ? '收起直接编辑' : '直接编辑双页预览' }}
         </button>
         <button v-if="pages.length > 0" class="story-button-secondary ml-auto px-6 py-3 text-sm" @click="goNext">
           进入导出 →
@@ -557,16 +567,23 @@ watch(
       <p class="mt-3 text-sm text-[var(--story-muted)]">先运行自动规划，或按章节手动新增页面。</p>
     </div>
 
-    <div v-if="showPreview" class="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/70 p-4" @click.self="showPreview = false">
-      <div class="paper-panel my-8 w-full max-w-5xl overflow-hidden rounded-[28px]">
-        <div class="flex items-center justify-between border-b border-[rgba(79,59,42,0.12)] px-6 py-4">
-          <p class="font-story text-3xl text-[#241c16]">整册预览</p>
-          <button class="rounded-full bg-[rgba(43,31,24,0.08)] px-4 py-2 text-sm text-[#3f342b]" @click="showPreview = false">
-            关闭
+    <div v-if="showPreview && pages.length" class="fixed inset-0 z-50 flex flex-col bg-[#171411]">
+      <header class="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-[#211d19] px-5 py-4 text-white shadow-xl md:px-8">
+        <div>
+          <p class="text-xs uppercase tracking-[0.24em] text-[#d6b47c]">Live Book Editor</p>
+          <h2 class="mt-1 font-story text-3xl">双页直接编辑</h2>
+          <p class="mt-1 text-xs text-white/60">拖动照片或描述框调整位置，修改会自动保存；页码固定在底部中央。</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <span v-if="savingPageId" class="text-xs text-[#d6b47c]">正在保存…</span>
+          <button class="rounded-full border border-white/15 bg-white/10 px-5 py-2.5 text-sm transition hover:bg-white/20" @click="showPreview = false">
+            关闭预览
           </button>
         </div>
-        <div class="max-h-[75vh] overflow-auto bg-white px-4 py-4" v-html="previewHtml" />
-      </div>
+      </header>
+      <main class="min-h-0 flex-1 overflow-auto px-3 py-5 md:px-8 md:py-8">
+        <PageSpreadEditor :pages="pages" :photos="allPhotos" :saving-page-id="savingPageId" :page-aspect-ratio="pageAspectRatio" @save="savePageLayout" />
+      </main>
     </div>
   </div>
 </template>

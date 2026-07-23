@@ -71,6 +71,8 @@ async def update_page(album_id: str, page_id: str, payload: UpdatePagePayload, d
         raise HTTPException(status_code=404, detail="album not found")
     if error == "page":
         raise HTTPException(status_code=404, detail="page not found")
+    if error and error.startswith("layout:"):
+        raise HTTPException(status_code=422, detail=error.removeprefix("layout:"))
     return success_response(updated, "page updated")
 
 

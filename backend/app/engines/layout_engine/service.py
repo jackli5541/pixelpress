@@ -3,6 +3,8 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+from app.engines.layout_engine.freeform import build_freeform_layout, description_height
+
 
 PAGE_SIZES_MM: dict[str, tuple[float, float]] = {
     "A4": (210, 297),
@@ -229,6 +231,34 @@ body {
   min-height: 0;
   display: flex;
 }
+.freeform-layout {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.freeform-photo {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+.freeform-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.page-description {
+  position: absolute;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--page-secondary, #6b7280);
+  font: 9pt/1.55 var(--page-body-font, 'Noto Sans SC', sans-serif);
+  background: transparent;
+}
 .photo-layout {
   width: 100%;
   height: 100%;
@@ -274,14 +304,15 @@ body {
 }
 .page-number {
   position: absolute;
-  right: calc(var(--page-safe-margin, 8mm) + 2mm);
+  left: 50%;
+  transform: translateX(-50%);
   bottom: calc(var(--page-safe-margin, 8mm) + 1mm);
   min-width: 10mm;
   text-align: center;
   padding: 1mm 2.4mm;
   border-radius: 999px;
-  background: var(--page-panel-bg, rgba(255,255,255,0.72));
-  border: 1px solid var(--page-border, rgba(17,24,39,0.12));
+  background: transparent;
+  border: 0;
   color: var(--page-secondary, #6b7280);
   font-size: 8.2pt;
 }
@@ -651,6 +682,35 @@ def _render_slots(photos: list[dict[str, Any]], captions_map: dict[str, str]) ->
     return "".join(parts)
 
 
+def _render_freeform(layout_meta: dict[str, Any], photos: list[dict[str, Any]]) -> str:
+    photos_by_id = {str(photo.get("id")): photo for photo in photos}
+    parts: list[str] = []
+    for element in sorted(layout_meta.get("elements", []), key=lambda item: int(item.get("order", 0))):
+        photo = photos_by_id.get(str(element.get("photo_id")))
+        if not photo:
+            continue
+        src = escape(str(photo.get("src") or photo.get("url") or ""), quote=True)
+        alt = escape(str(photo.get("filename") or "photo"), quote=True)
+        style = ";".join(
+            f"{key}:{float(element[value]) * 100:.6f}%"
+            for key, value in (("left", "x"), ("top", "y"), ("width", "width"), ("height", "height"))
+        )
+        parts.append(f'<figure class="freeform-photo" data-photo-id="{escape(str(element.get("photo_id")), quote=True)}" style="{style}"><img src="{src}" alt="{alt}" loading="eager" /></figure>')
+    description = layout_meta.get("description") or {}
+    text = str(description.get("text") or "").strip()
+    if text:
+        width = float(description.get("width", 0.64))
+        height = description_height(text, width)
+        style = ";".join((
+            f"left:{float(description.get('x', 0.18)) * 100:.6f}%",
+            f"top:{float(description.get('y', 0.72)) * 100:.6f}%",
+            f"width:{width * 100:.6f}%",
+            f"min-height:{height * 100:.6f}%",
+        ))
+        parts.append(f'<p class="page-description" style="{style}">{escape(text)}</p>')
+    return "".join(parts)
+
+
 def generate_layout_html(
     layout: dict[str, Any],
     photos: list[dict[str, Any]],
@@ -671,16 +731,23 @@ def generate_layout_html(
         for item in page_meta.get("captions", [])
         if isinstance(item, dict) and item.get("photo_id")
     }
-    copy_html = _render_copy_block(title, subtitle, page_role, style)
-    slot_html = _render_slots(photos, captions_map)
+    width_mm, height_mm = _dimensions_for(print_spec)
+    safe_margin = float((print_spec or {}).get("safe_margin_mm", 8))
+    layout_meta = build_freeform_layout(
+        photos,
+        page_meta,
+        page_width_mm=width_mm,
+        page_height_mm=height_mm,
+        safe_margin_mm=safe_margin,
+    )
+    freeform_html = _render_freeform(layout_meta, photos)
     css_class = layout.get("css_class", "layout-grid-3")
     shell_classes = f"print-page-shell role-{escape(page_role)} count-{len(photos)} template-{escape(str(layout.get('template', 'grid_3')))}"
     return (
         f'<div class="page" style="{_style_vars(style, print_spec)}">'
         f'<section class="{shell_classes}">'
         '<div class="page-inner">'
-        f"{copy_html}"
-        f'<div class="page-media"><div class="photo-layout {css_class}">{slot_html}</div></div>'
+        f'<div class="page-media"><div class="freeform-layout">{freeform_html}</div></div>'
         "</div>"
         f'<div class="page-number">{page_number}</div>'
         "</section>"

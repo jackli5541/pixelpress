@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.enums import AlbumStatus
 from app.core.config import get_settings
 from app.engines.layout_engine.prompt_pipeline import recommend_layout_with_ai
+from app.engines.layout_engine.freeform import (
+    FreeformLayoutError,
+    build_freeform_layout,
+    validate_freeform_layout,
+)
 from app.engines.layout_engine.service import (
     CSS_STYLES,
     LAYOUT_TEMPLATES,
@@ -152,6 +157,8 @@ class LayoutService:
                 "url": photo.url,
                 "filename": photo.filename,
                 "custom_caption": photo.custom_caption,
+                "width": photo.width,
+                "height": photo.height,
             }
             if embedded_sources is not None:
                 item["src"] = embedded_sources.get(photo.id, photo.url)
@@ -188,7 +195,26 @@ class LayoutService:
         if album is None:
             return None
         pages = await self.page_repo.list_pages(album_id)
-        return [serialize_page(page) for page in pages]
+        print_spec = self._default_print_spec(album)
+        width_mm, height_mm = self._page_dimensions(print_spec)
+        result = []
+        for page in pages:
+            photos = [link.photo for link in sorted(page.photo_links, key=lambda item: item.order_index) if link.photo is not None and is_photo_included(link.photo)]
+            item = serialize_page(page)
+            item["meta"] = build_freeform_layout(
+                photos,
+                page.meta_json,
+                page_width_mm=width_mm,
+                page_height_mm=height_mm,
+                safe_margin_mm=float(print_spec.get("safe_margin_mm", 8)),
+            )
+            result.append(item)
+        return result
+
+    @staticmethod
+    def _page_dimensions(print_spec: dict[str, Any]) -> tuple[float, float]:
+        sizes = {"A4": (210.0, 297.0), "A5": (148.0, 210.0), "square_10inch": (200.0, 200.0)}
+        return sizes.get(str(print_spec.get("book_size", "A4")), sizes["A4"])
 
     async def create_page(self, album_id: str, payload: dict):
         album = await self.album_repo.get_album(album_id)
@@ -221,7 +247,29 @@ class LayoutService:
             return None, "page"
         photo_ids = payload.pop("photo_ids", None)
         if "meta" in payload:
-            payload["meta_json"] = payload.pop("meta")
+            proposed_meta = payload.pop("meta")
+            linked_photos = {
+                link.photo_id: link.photo
+                for link in page.photo_links
+                if link.photo is not None and is_photo_included(link.photo)
+            }
+            print_spec = self._default_print_spec(album)
+            width_mm, height_mm = self._page_dimensions(print_spec)
+            try:
+                payload["meta_json"] = validate_freeform_layout(
+                    proposed_meta,
+                    linked_photos,
+                    page_width_mm=width_mm,
+                    page_height_mm=height_mm,
+                    safe_margin_mm=float(print_spec.get("safe_margin_mm", 8)),
+                )
+            except FreeformLayoutError as exc:
+                return None, f"layout:{exc}"
+        if photo_ids is not None:
+            payload["meta_json"] = None
+        elif "template" in payload and "meta_json" not in payload:
+            payload["meta_json"] = None
+        payload["status"] = "draft"
         updated = await self.page_repo.update_page(page, payload, photo_ids)
         album.content_revision += 1
         await self._clear_render_artifacts(album)
@@ -262,7 +310,7 @@ class LayoutService:
                         existing.add(photo_id)
             else:
                 current_ids = [pid for pid in current_ids if pid not in photo_ids]
-            await self.page_repo.update_page(page, {}, current_ids)
+            await self.page_repo.update_page(page, {"meta_json": None, "status": "draft"}, current_ids)
         album.content_revision += 1
         await self._clear_render_artifacts(album)
         await self.session.commit()
