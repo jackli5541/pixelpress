@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import shutil
 from pathlib import Path
 
 from app.storage.file_store import get_uploads_root
@@ -54,6 +56,25 @@ class LocalFileStorage:
             public_url=None,
         )
 
+    async def save_export_from_path(
+        self,
+        album_id: str,
+        export_name: str,
+        source_path: Path,
+        content_type: str,
+    ) -> StoredFile:
+        relative_path = f"albums/{album_id}/exports/{export_name}"
+        target_path = self.resolve_public_path(relative_path)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(shutil.copyfile, source_path, target_path)
+        return StoredFile(
+            storage_key=relative_path,
+            content_type=content_type,
+            size=source_path.stat().st_size,
+            internal_path=str(target_path),
+            public_url=None,
+        )
+
     async def save_artifact(
         self,
         album_id: str,
@@ -81,6 +102,11 @@ class LocalFileStorage:
     async def open_file(self, storage_key: str) -> bytes:
         file_path = self.resolve_public_path(storage_key)
         return file_path.read_bytes()
+
+    async def copy_to_path(self, storage_key: str, target_path: Path) -> None:
+        source_path = self.resolve_public_path(storage_key)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(shutil.copyfile, source_path, target_path)
 
     def build_photo_access_path(self, album_id: str, photo_id: str) -> str:
         return f"/api/v1/albums/{album_id}/photos/{photo_id}/content"

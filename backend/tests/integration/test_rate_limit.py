@@ -26,10 +26,16 @@ def test_upload_rate_limit_returns_429(client, monkeypatch):
 
     headers = create_auth_headers(client, username="upload-rate-user", password="secret", role="user")
     album = create_album(client, headers, name="Upload Rate")
+    other_album = create_album(client, headers, name="Upload Rate Independent Album")
 
     first = client.post(
         f"/api/v1/albums/{album['id']}/photos/upload",
         files=[("files", ("a.jpg", VALID_JPEG_BYTES, "image/jpeg"))],
+        headers=headers,
+    )
+    other_album_first = client.post(
+        f"/api/v1/albums/{other_album['id']}/photos/upload",
+        files=[("files", ("other.jpg", VALID_JPEG_BYTES, "image/jpeg"))],
         headers=headers,
     )
     limited = client.post(
@@ -39,7 +45,12 @@ def test_upload_rate_limit_returns_429(client, monkeypatch):
     )
 
     assert first.status_code == 200
+    assert other_album_first.status_code == 200
     assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) >= 1
+    assert limited.headers["X-RateLimit-Limit"] == "1"
+    assert limited.headers["X-RateLimit-Remaining"] == "0"
+    assert int(limited.headers["X-RateLimit-Reset"]) > 0
 
 
 def test_export_rate_limit_returns_429(client, monkeypatch):

@@ -13,27 +13,51 @@ class PageRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def create_page(self, payload: dict, photo_ids: list[str]) -> Page:
+    async def create_page(self, payload: dict, photo_ids: list[str], photo_slots: list[dict] | None = None) -> Page:
         page = Page(**payload)
         self.session.add(page)
         await self.session.flush()
         links: list[PagePhoto] = []
+        slot_by_id = {str(item["photo_id"]): item for item in (photo_slots or [])}
         for index, photo_id in enumerate(photo_ids):
-            link = PagePhoto(page_id=page.id, photo_id=photo_id, order_index=index)
+            slot = slot_by_id.get(str(photo_id), {})
+            link = PagePhoto(
+                page_id=page.id,
+                photo_id=photo_id,
+                order_index=index,
+                slot_key=slot.get("slot_key"),
+                focal_x=float(slot.get("focal_x", 0.5)),
+                focal_y=float(slot.get("focal_y", 0.5)),
+            )
             self.session.add(link)
             links.append(link)
         await self.session.flush()
         set_committed_value(page, "photo_links", links)
         return page
 
-    async def update_page(self, page: Page, updates: dict, photo_ids: list[str] | None = None) -> Page:
+    async def update_page(
+        self,
+        page: Page,
+        updates: dict,
+        photo_ids: list[str] | None = None,
+        photo_slots: list[dict] | None = None,
+    ) -> Page:
         for key, value in updates.items():
             setattr(page, key, value)
         if photo_ids is not None:
             await self.session.execute(delete(PagePhoto).where(PagePhoto.page_id == page.id))
             links: list[PagePhoto] = []
+            slot_by_id = {str(item["photo_id"]): item for item in (photo_slots or [])}
             for index, photo_id in enumerate(photo_ids):
-                link = PagePhoto(page_id=page.id, photo_id=photo_id, order_index=index)
+                slot = slot_by_id.get(str(photo_id), {})
+                link = PagePhoto(
+                    page_id=page.id,
+                    photo_id=photo_id,
+                    order_index=index,
+                    slot_key=slot.get("slot_key"),
+                    focal_x=float(slot.get("focal_x", 0.5)),
+                    focal_y=float(slot.get("focal_y", 0.5)),
+                )
                 self.session.add(link)
                 links.append(link)
             set_committed_value(page, "photo_links", links)

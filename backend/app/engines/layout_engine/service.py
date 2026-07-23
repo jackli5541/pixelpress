@@ -7,11 +7,17 @@ from typing import Any
 PAGE_SIZES_MM: dict[str, tuple[float, float]] = {
     "A4": (210, 297),
     "A5": (148, 210),
-    "square_10inch": (200, 200),
+    "square_10inch": (254, 254),
 }
 
 
 LAYOUT_TEMPLATES: dict[str, dict[str, Any]] = {
+    "spread_text": {
+        "name": "Spread Text",
+        "slots": 0,
+        "css_class": "layout-text-only",
+        "description": "Reserved copy area with no photo slot.",
+    },
     "full_page": {
         "name": "Full Page",
         "slots": 1,
@@ -59,6 +65,12 @@ LAYOUT_TEMPLATES: dict[str, dict[str, Any]] = {
         "slots": 4,
         "css_class": "layout-grid-4",
         "description": "Tight four-photo contact sheet arrangement.",
+    },
+    "grid_5": {
+        "name": "Grid Five",
+        "slots": 5,
+        "css_class": "layout-grid-5",
+        "description": "Five-photo contact sheet with a reserved compact copy rhythm.",
     },
     "one_large_two_small": {
         "name": "One Large Two Small",
@@ -251,12 +263,15 @@ body {
   min-height: 0;
   border-radius: 2.4mm;
   overflow: hidden;
-  background: rgba(255,255,255,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
 }
 .slot img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 .photo-caption {
@@ -300,9 +315,7 @@ body {
 .layout-cinema-landscape .slot-media {
   min-height: 0;
 }
-.layout-cinema-landscape img {
-  object-fit: cover;
-}
+.layout-cinema-landscape img { object-fit: contain; }
 
 .layout-gallery-portrait {
   display: flex;
@@ -342,6 +355,15 @@ body {
   grid-template-rows: 1fr 1fr;
   gap: 4mm;
 }
+
+.layout-grid-5 {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 4mm;
+}
+.layout-grid-5 .slot:first-child { grid-row: 1 / span 2; }
+.layout-grid-5 .slot:last-child { grid-column: 1 / -1; }
 
 .layout-grid-3 {
   display: grid;
@@ -500,11 +522,122 @@ body {
   font-size: 8.2pt;
 }
 
+/* Spread V2 is a restrained print surface. The legacy card styles above stay
+   intact for existing albums while these rules remove decorative chrome. */
+.print-page-shell.spread-v2 {
+  padding: calc(var(--page-bleed) + var(--page-safe-margin));
+  background: var(--page-bg);
+}
+.print-page-shell.spread-v2::before,
+.print-page-shell.spread-v2::after { display: none; }
+.print-page-shell.spread-v2.side-left {
+  padding-right: calc(var(--page-bleed) + var(--page-safe-margin) + 5mm);
+}
+.print-page-shell.spread-v2.side-right {
+  padding-left: calc(var(--page-bleed) + var(--page-safe-margin) + 5mm);
+}
+.spread-v2 .page-inner { gap: 5mm; }
+.spread-v2 .page-copy { width: min(72%, 112mm); gap: 2mm; }
+.spread-v2 .page-role { display: none; }
+.spread-v2 .page-copy h3 {
+  font-size: 17pt;
+  line-height: 1.25;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+.spread-v2 .page-subtitle {
+  font-size: 8.5pt;
+  line-height: 1.7;
+  letter-spacing: 0;
+  max-width: 88mm;
+}
+.spread-v2 .slot {
+  padding: 0;
+  gap: 1.5mm;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.spread-v2 .slot-media { border-radius: 0; background: #eeeeeb; }
+.spread-v2 .photo-caption {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 7.5pt;
+}
+.spread-v2 .photo-layout { gap: 2.5mm; }
+.spread-v2 .layout-text-only { display: none; }
+.spread-v2:has(.layout-text-only) .page-media { display: none; }
+.spread-v2:has(.layout-text-only) .page-copy {
+  margin-top: auto;
+  margin-bottom: 24%;
+}
+.spread-v2 .page-number {
+  bottom: calc(var(--page-bleed) + 4mm);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 7pt;
+  letter-spacing: 0;
+}
+.spread-v2.side-left .page-number { left: calc(var(--page-bleed) + 7mm); right: auto; }
+.spread-v2.side-right .page-number { right: calc(var(--page-bleed) + 7mm); left: auto; }
+.spread-v2 .page-number::before { content: "\00b7  "; }
+.spread-v2 .page-number::after { content: "  \00b7"; }
+.spread-v2.cover-page,
+.spread-v2.chapter-divider,
+.spread-v2.album-closer { padding: var(--page-bleed); }
+.spread-v2 .page-kicker { letter-spacing: 0; font-size: 7pt; }
+.spread-v2 .meta-pill { border-radius: 0; background: transparent; letter-spacing: 0; }
+.spread-v2.cover-page .cover-content {
+  height: 43%;
+  justify-content: flex-start;
+  padding: calc(var(--page-safe-margin) + 8mm) var(--page-safe-margin) 5mm;
+}
+.spread-v2 .cover-title { font-size: 26pt; line-height: 1.2; letter-spacing: 0; }
+.spread-v2 .cover-meta { display: none; }
+.spread-v2 .chapter-meta,
+.spread-v2 .closer-meta,
+.spread-v2 .closer-text { display: none; }
+.spread-v2 .hero-band { display: none; }
+.spread-v2 .cover-photo {
+  position: absolute;
+  left: var(--page-safe-margin);
+  right: var(--page-safe-margin);
+  bottom: var(--page-safe-margin);
+  height: 54%;
+  overflow: hidden;
+}
+.spread-v2 .cover-photo { display: flex; align-items: center; justify-content: center; background: #ffffff; }
+.spread-v2 .cover-photo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.spread-v2.chapter-divider .chapter-content,
+.spread-v2.album-closer .closer-content { padding: calc(var(--page-safe-margin) + 12mm); }
+.spread-v2 .chapter-title { font-size: 24pt; line-height: 1.25; letter-spacing: 0; }
+.blank-page.spread-v2 { background: var(--page-bg); }
+.blank-page.spread-v2::before,
+.blank-page.spread-v2::after { display: none; }
+
 @media print {
   html, body { background: #fff; padding: 0; }
   .page { margin: 0; }
 }
 """
+
+
+def generate_blank_page_html(
+    *,
+    style_key: str,
+    style_presets: dict[str, dict[str, Any]] | None = None,
+    print_spec: dict[str, Any] | None = None,
+) -> str:
+    style = _resolve_style(style_key, style_presets or {})
+    return (
+        f'<div class="page" style="{_style_vars(style, print_spec, include_bleed=True)}">'
+        '<section class="print-page-shell blank-page spread-v2" aria-label="Blank page"></section>'
+        '</div>'
+    )
 
 
 def select_template(
@@ -573,13 +706,19 @@ def _resolve_style(style_key: str, style_presets: dict[str, dict[str, Any]]) -> 
     return base_style | style_presets.get(style_key, {})
 
 
-def _style_vars(style: dict[str, Any], print_spec: dict[str, Any] | None) -> str:
+def _style_vars(style: dict[str, Any], print_spec: dict[str, Any] | None, *, include_bleed: bool = False) -> str:
     width_mm, height_mm = _dimensions_for(print_spec)
     safe_margin = float((print_spec or {}).get("safe_margin_mm", 8))
+    bleed = float((print_spec or {}).get("bleed_mm", 3)) if include_bleed else 0.0
+    sheet_width = width_mm + bleed * 2
+    sheet_height = height_mm + bleed * 2
     return ";".join(
         [
-            f"--page-width:{width_mm}mm",
-            f"--page-height:{height_mm}mm",
+            f"--page-width:{sheet_width}mm",
+            f"--page-height:{sheet_height}mm",
+            f"--trim-width:{width_mm}mm",
+            f"--trim-height:{height_mm}mm",
+            f"--page-bleed:{bleed}mm",
             f"--page-bg:{style['background']}",
             f"--page-primary:{style['primary_color']}",
             f"--page-secondary:{style['secondary_color']}",
@@ -642,9 +781,14 @@ def _render_slots(photos: list[dict[str, Any]], captions_map: dict[str, str]) ->
         filename = escape(str(photo.get("filename") or f"photo-{index + 1}"))
         caption = _caption_for(photo, captions_map)
         caption_html = f'<figcaption class="photo-caption">{escape(caption)}</figcaption>' if caption else ""
+        focal_x = min(max(float(photo.get("focal_x", 0.5)), 0.0), 1.0) * 100
+        focal_y = min(max(float(photo.get("focal_y", 0.5)), 0.0), 1.0) * 100
+        slot_key = escape(str(photo.get("slot_key") or f"slot-{index + 1}"))
+        fit_mode = "cover" if photo.get("fit_mode") == "cover" else "contain"
         parts.append(
-            "<figure class=\"slot\">"
-            f'<div class="slot-media"><img src="{escape(src, quote=True)}" alt="{filename}" loading="eager" /></div>'
+            f'<figure class="slot slot-{slot_key}">'
+            f'<div class="slot-media"><img src="{escape(src, quote=True)}" alt="{filename}" loading="eager" '
+            f'style="object-fit:{fit_mode};object-position:{focal_x:.2f}% {focal_y:.2f}%" /></div>'
             f"{caption_html}"
             "</figure>"
         )
@@ -664,8 +808,14 @@ def generate_layout_html(
     style_key = str(page_meta.get("style_key") or "minimal")
     style = _resolve_style(style_key, style_presets)
     page_role = str(page_meta.get("page_role") or "standard")
-    title = str(page_meta.get("title") or "").strip()[:80]
-    subtitle = str(page_meta.get("subtitle") or "").strip()[:120]
+    is_spread_v2 = page_meta.get("layout_version") == "spread_v2"
+    side = str(page_meta.get("side") or "right")
+    text_side = str(page_meta.get("text_side") or "none")
+    title = str(page_meta.get("headline") if is_spread_v2 else page_meta.get("title") or "").strip()[:80]
+    subtitle = str(page_meta.get("body") if is_spread_v2 else page_meta.get("subtitle") or "").strip()[:120]
+    if is_spread_v2 and text_side not in {side, "both"}:
+        title = ""
+        subtitle = ""
     captions_map = {
         str(item.get("photo_id")): str(item.get("text") or "")[:120]
         for item in page_meta.get("captions", [])
@@ -674,15 +824,18 @@ def generate_layout_html(
     copy_html = _render_copy_block(title, subtitle, page_role, style)
     slot_html = _render_slots(photos, captions_map)
     css_class = layout.get("css_class", "layout-grid-3")
-    shell_classes = f"print-page-shell role-{escape(page_role)} count-{len(photos)} template-{escape(str(layout.get('template', 'grid_3')))}"
+    v2_class = f" spread-v2 side-{escape(side)}" if is_spread_v2 else ""
+    shell_classes = f"print-page-shell role-{escape(page_role)} count-{len(photos)} template-{escape(str(layout.get('template', 'grid_3')))}{v2_class}"
+    display_page_number = page_meta.get("display_page_number", page_number)
+    page_number_html = f'<div class="page-number">{display_page_number}</div>' if display_page_number is not None else ""
     return (
-        f'<div class="page" style="{_style_vars(style, print_spec)}">'
+        f'<div class="page" style="{_style_vars(style, print_spec, include_bleed=is_spread_v2)}">'
         f'<section class="{shell_classes}">'
         '<div class="page-inner">'
         f"{copy_html}"
         f'<div class="page-media"><div class="photo-layout {css_class}">{slot_html}</div></div>'
         "</div>"
-        f'<div class="page-number">{page_number}</div>'
+        f'{page_number_html}'
         "</section>"
         "</div>"
     )
@@ -697,15 +850,24 @@ def generate_cover_html(
     print_spec: dict[str, Any] | None = None,
     chapter_count: int = 0,
     photo_count: int = 0,
+    cover_photo: dict[str, Any] | None = None,
 ) -> str:
     style = _resolve_style(style_key, style_presets or {})
     alignment = _copy_alignment_class(style)
     title = escape((cover_title or album_name or "Album").strip())
     subtitle = escape(album_name.strip()) if cover_title and cover_title.strip() and cover_title.strip() != album_name.strip() else ""
     subtitle_html = f'<p class="cover-subtitle">{subtitle}</p>' if subtitle else ""
+    is_spread_v2 = style_key in {"minimal_white", "editorial_journal", "warm_memory"}
+    cover_media = ""
+    if cover_photo:
+        cover_media = (
+            '<figure class="cover-photo"><img '
+            f'src="{escape(str(cover_photo.get("src") or cover_photo.get("url") or ""), quote=True)}" '
+            f'alt="{escape(str(cover_photo.get("filename") or "cover"), quote=True)}" /></figure>'
+        )
     return (
-        f'<div class="page" style="{_style_vars(style, print_spec)}">'
-        '<section class="print-page-shell cover-page">'
+        f'<div class="page" style="{_style_vars(style, print_spec, include_bleed=is_spread_v2)}">'
+        f'<section class="print-page-shell cover-page{" spread-v2" if is_spread_v2 else ""}">'
         '<div class="hero-band"></div>'
         f'<div class="cover-content {alignment}">'
         '<p class="page-kicker">Print Album</p>'
@@ -716,6 +878,7 @@ def generate_cover_html(
         f'<span class="meta-pill">{chapter_count} Chapters</span>'
         f'<span class="meta-pill">{escape(style.get("label", style_key))}</span>'
         "</div>"
+        f"{cover_media}"
         "</div>"
         "</section>"
         "</div>"
@@ -735,9 +898,10 @@ def generate_chapter_divider_html(
 ) -> str:
     style = _resolve_style(style_key, style_presets or {})
     alignment = _copy_alignment_class(style)
+    is_spread_v2 = style_key in {"minimal_white", "editorial_journal", "warm_memory"}
     return (
-        f'<div class="page" style="{_style_vars(style, print_spec)}">'
-        '<section class="print-page-shell chapter-divider">'
+        f'<div class="page" style="{_style_vars(style, print_spec, include_bleed=is_spread_v2)}">'
+        f'<section class="print-page-shell chapter-divider{" spread-v2" if is_spread_v2 else ""}">'
         f'<div class="chapter-content {alignment}">'
         f'<p class="page-kicker">Chapter {chapter_index:02d}</p>'
         f'<h2 class="chapter-title">{escape(chapter_name)}</h2>'
@@ -764,9 +928,10 @@ def generate_album_closer_html(
 ) -> str:
     style = _resolve_style(style_key, style_presets or {})
     alignment = _copy_alignment_class(style)
+    is_spread_v2 = style_key in {"minimal_white", "editorial_journal", "warm_memory"}
     return (
-        f'<div class="page" style="{_style_vars(style, print_spec)}">'
-        '<section class="print-page-shell album-closer">'
+        f'<div class="page" style="{_style_vars(style, print_spec, include_bleed=is_spread_v2)}">'
+        f'<section class="print-page-shell album-closer{" spread-v2" if is_spread_v2 else ""}">'
         f'<div class="closer-content {alignment}">'
         '<p class="page-kicker">Album Complete</p>'
         f'<h2 class="closer-title">{escape(album_name)}</h2>'

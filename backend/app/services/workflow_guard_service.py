@@ -7,6 +7,8 @@ from app.repositories.task_repo import TaskRepository
 
 LONG_RUNNING_TASK_TYPES = [
     "clean_photos",
+    "analyze_album_theme",
+    "score_album_theme",
     "cluster_chapters",
     "plan_pages",
     "render_layout",

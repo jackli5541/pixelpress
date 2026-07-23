@@ -11,8 +11,9 @@ from app.modules.admin.api import router as admin_router
 from app.modules.chapter.api import router as chapter_router
 from app.modules.cleaning.api import router as cleaning_router
 from app.modules.export.api import router as export_router
-from app.modules.layout.api import router as layout_router
+from app.modules.layout.api import catalog_router as layout_catalog_router, router as layout_router
 from app.modules.photo.api import router as photo_router
+from app.modules.theme.api import router as theme_router
 from app.modules.user.api import auth_router, users_router
 from app.services.layout_service import LayoutService
 from app.services.photo_service import PhotoService
@@ -53,13 +54,22 @@ async def get_task(task_id: str, db: AsyncSession = Depends(get_db), user=Depend
 @api_router.get("/albums/{album_id}/preview", tags=["preview"])
 async def preview_album_html(
     album_id: str,
+    style_key: str | None = Query(default=None),
+    sample: bool = Query(default=False),
+    spread_id: str | None = Query(default=None),
+    recipe_key: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_current_user),
 ) -> dict:
     """获取已渲染的完整相册 HTML（用于前端预览或浏览器打开）。"""
     album = await require_album_access(db, user, album_id)
 
-    html = await LayoutService(db).load_preview_html(album_id)
+    layout_service = LayoutService(db)
+    html = (
+        await layout_service.build_style_sample(album_id, style_key, spread_id=spread_id, recipe_key=recipe_key)
+        if sample and style_key
+        else await layout_service.load_preview_html(album_id)
+    )
     if not html:
         raise HTTPException(status_code=400, detail="not rendered yet. Please run POST /render first.")
 
@@ -111,6 +121,8 @@ api_router.include_router(admin_router)
 api_router.include_router(album_router)
 api_router.include_router(photo_router)
 api_router.include_router(cleaning_router)
+api_router.include_router(theme_router)
 api_router.include_router(chapter_router)
 api_router.include_router(layout_router)
+api_router.include_router(layout_catalog_router)
 api_router.include_router(export_router)

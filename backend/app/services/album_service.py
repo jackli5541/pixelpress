@@ -56,6 +56,9 @@ class AlbumService:
                 },
             ),
         )
+        payload["layout_version"] = payload.get("layout_version") or "legacy_page_v1"
+        if payload.get("layout_version") == "spread_v2" and payload.get("theme_style") in {None, "minimal"}:
+            payload["theme_style"] = "minimal_white"
         album = await self.repo.create_album(payload)
         await self.session.commit()
         return serialize_album(album)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, JSON, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -15,6 +15,10 @@ class Page(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     album_id: Mapped[str] = mapped_column(ForeignKey("albums.id", ondelete="CASCADE"), nullable=False)
     chapter_id: Mapped[str | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True)
+    spread_id: Mapped[str | None] = mapped_column(ForeignKey("spreads.id", ondelete="CASCADE"), nullable=True, index=True)
+    side: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    physical_page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    display_page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_number: Mapped[int] = mapped_column(nullable=False)
     template: Mapped[str] = mapped_column(String(64), default="grid_3", nullable=False)
     html: Mapped[str] = mapped_column(Text, default="", nullable=False)
@@ -23,4 +27,5 @@ class Page(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     album = relationship("Album", back_populates="pages")
     chapter = relationship("Chapter", back_populates="pages")
+    spread = relationship("Spread", back_populates="pages")
     photo_links = relationship("PagePhoto", back_populates="page", cascade="all, delete-orphan")

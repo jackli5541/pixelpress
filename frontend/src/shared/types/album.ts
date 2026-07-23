@@ -15,6 +15,7 @@ export interface AlbumCard {
   album_type: string
   book_size: string
   theme_style: string
+  layout_version?: 'legacy_page_v1' | 'spread_v2'
   status: AlbumStatus
   cover_title?: string | null
   photo_count: number
@@ -60,4 +61,6 @@ export interface ExportItem {
   task_id: string
   format?: string
   file_size?: number | null
+  render_revision?: number | null
+  profile_hash?: string | null
 }

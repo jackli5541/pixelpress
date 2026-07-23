@@ -6,7 +6,8 @@ export function getAlbumStepKey(status?: string | null): AlbumWorkflowStep {
   if (status === 'uploaded') return 'cleaning'
   if (status === 'cleaned') return 'chapters'
   if (status === 'clustered') return 'planning'
-  if (status === 'planned' || status === 'rendered' || status === 'exported') return 'export'
+  if (status === 'planned') return 'planning'
+  if (status === 'rendered' || status === 'exported') return 'export'
   return 'upload'
 }
 

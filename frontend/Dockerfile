@@ -1,5 +1,5 @@
-ARG NODE_BASE_IMAGE=docker.m.daocloud.io/library/node:20-alpine
-ARG NGINX_BASE_IMAGE=docker.m.daocloud.io/library/nginx:1.27-alpine
+ARG NODE_BASE_IMAGE=docker.1ms.run/node:20-alpine
+ARG NGINX_BASE_IMAGE=docker.1ms.run/nginx:1.27-alpine
 
 FROM ${NODE_BASE_IMAGE} AS build
 

@@ -10,10 +10,13 @@ from app.jobs.handlers import (
     run_export_job,
     run_plan_pages_job,
     run_render_layout_job,
+    run_theme_analysis_job,
+    run_theme_selection_job,
 )
 from app.services.task_dispatch_service import TaskDispatchService
 from app.services.task_service import TaskService
 from app.db import session as db_session
+from app.engines.export_engine.service import close_shared_browser
 
 
 def build_redis_settings() -> RedisSettings:
@@ -39,9 +42,15 @@ async def on_startup(ctx):  # noqa: ANN001
         await TaskDispatchService(session).flush_pending_dispatches(settings.task_dispatch_batch_size)
 
 
+async def on_shutdown(ctx):  # noqa: ANN001
+    await close_shared_browser()
+
+
 class WorkerSettings:
     functions = [
         run_cleaning_job,
+        run_theme_analysis_job,
+        run_theme_selection_job,
         run_cluster_chapters_job,
         run_plan_pages_job,
         run_render_layout_job,
@@ -51,3 +60,4 @@ class WorkerSettings:
     max_jobs = get_settings().queue_worker_concurrency
     job_timeout = get_settings().queue_job_timeout_seconds
     on_startup = on_startup
+    on_shutdown = on_shutdown

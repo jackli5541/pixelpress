@@ -8,15 +8,13 @@ from .helpers import create_album, create_auth_headers, run_task_worker, upload_
 
 async def _fake_infer_json(self, request):  # noqa: ANN001
     if request.model == "cluster-model":
+        assert request.images
+        assert "photo_ids" not in request.output_schema.get("properties", {})
         return ProviderResponse(
             payload={
-                "chapters": [
-                    {
-                        "name": "海边旅行",
-                        "description": "围绕海边活动与家庭互动的章节",
-                        "photo_ids": ["photo-a", "photo-b", "photo-c"],
-                    }
-                ]
+                "chapter_key": "chapter-1",
+                "name": "海边旅行",
+                "description": "围绕海边活动与家庭互动的章节",
             },
             raw_text="{}",
             model=request.model,
@@ -76,16 +74,7 @@ def test_ai_chapter_cluster_and_layout_content_flow(client, monkeypatch):
     async def remapped_infer(self, request):  # noqa: ANN001
         response = await _fake_infer_json(self, request)
         payload = response.payload
-        if "chapters" in payload:
-            payload = {
-                "chapters": [
-                    {
-                        **payload["chapters"][0],
-                        "photo_ids": [photo_id_map[item] for item in payload["chapters"][0]["photo_ids"]],
-                    }
-                ]
-            }
-        else:
+        if "ordered_photo_ids" in payload:
             payload = {
                 **payload,
                 "ordered_photo_ids": [photo_id_map[item] for item in payload["ordered_photo_ids"]],
@@ -112,7 +101,7 @@ def test_ai_chapter_cluster_and_layout_content_flow(client, monkeypatch):
     chapters = chapters_response.json()["data"]
     assert len(chapters) == 1
     assert chapters[0]["name"] == "海边旅行"
-    assert chapters[0]["photo_ids"] == [photo_a["id"], photo_b["id"], photo_c["id"]]
+    assert chapters[0]["photo_ids"] == sorted([photo_a["id"], photo_b["id"], photo_c["id"]])
 
     plan_response = client.post(f"/api/v1/albums/{album['id']}/plan", headers=headers)
     assert plan_response.status_code == 202

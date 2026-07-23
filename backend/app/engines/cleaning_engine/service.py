@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import numpy as np
+
 from app.engines.cleaning_engine.local_analyzer import LocalPhotoAnalyzer
 
 NEAR_PHASH_THRESHOLD = 6
@@ -155,6 +157,13 @@ def _complete_link_clusters(items: list[dict[str, Any]]) -> list[list[int]]:
     return [sorted(cluster) for cluster in clusters if len(cluster) >= 2]
 
 
+class DuplicateGrouper:
+    version = "complete-link-v2"
+
+    def group(self, analyses: list[dict[str, Any]]) -> list[list[int]]:
+        return _complete_link_clusters(analyses)
+
+
 def _fallback_analysis(photo_meta: dict[str, Any], version: str) -> dict[str, Any]:
     width = int(photo_meta.get("width") or 0)
     height = int(photo_meta.get("height") or 0)
@@ -170,6 +179,8 @@ def _fallback_analysis(photo_meta: dict[str, Any], version: str) -> dict[str, An
         "suggestion": "review",
         "confidence": 0.2,
         "clear_discard": False,
+        "hard_reject": False,
+        "hard_reject_reason": None,
         "issues": ["analysis_failed"],
         "features": {
             "fallback_used": True,
@@ -199,10 +210,53 @@ def _preferred_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
     pixels = int(resolution.get("width") or 0) * int(resolution.get("height") or 0)
     uploaded_at = item.get("uploaded_at")
     uploaded_key = uploaded_at.timestamp() if isinstance(uploaded_at, datetime) else float("inf")
-    return (-float(item.get("quality_score") or 0), -pixels, uploaded_key, str(item.get("photo_id")))
+    faces = item.get("features", {}).get("faces", {})
+    face_quality = faces.get("aggregate", {})
+    return (
+        bool(item.get("hard_reject")),
+        -int(faces.get("detected_count") or 0),
+        -float(face_quality.get("clarity_p20") or 0),
+        int(face_quality.get("closed_eye_suspected_count") or 0),
+        int(face_quality.get("occlusion_suspected_count") or 0),
+        int(face_quality.get("edge_crop_suspected_count") or 0),
+        int(face_quality.get("expression_attention_count") or 0),
+        -float(item.get("quality_score") or 0),
+        -pixels,
+        uploaded_key,
+        str(item.get("photo_id")),
+    )
 
 
-def build_cleaning_result(
+def _mark_expression_outliers(cluster: list[dict[str, Any]]) -> None:
+    samples: list[tuple[dict[str, Any], dict[str, float]]] = []
+    for item in cluster:
+        faces = item.get("features", {}).get("faces", {}).get("items") or []
+        primary = max(faces, key=lambda face: int(face.get("min_side_px") or 0), default=None)
+        vector = primary.get("expression_vector") if primary else None
+        if vector:
+            samples.append((item, vector))
+    if len(samples) < 3:
+        return
+    keys = sorted(set.intersection(*(set(vector) for _, vector in samples)))
+    if not keys:
+        return
+    medians = {key: float(np.median([vector[key] for _, vector in samples])) for key in keys}
+    for item, vector in samples:
+        deviation = sum(abs(float(vector[key]) - medians[key]) for key in keys) / len(keys)
+        if deviation < 0.35:
+            continue
+        faces = item.get("features", {}).get("faces", {})
+        primary = max(faces.get("items") or [], key=lambda face: int(face.get("min_side_px") or 0), default=None)
+        if primary is not None:
+            primary["expression_attention"] = True
+        aggregate = faces.setdefault("aggregate", {})
+        aggregate["expression_attention_count"] = int(aggregate.get("expression_attention_count") or 0) + 1
+        issues = item.setdefault("issues", [])
+        if "expression_attention" not in issues:
+            issues.append("expression_attention")
+
+
+def _build_cleaning_result(
     album_id: str,
     analyses: list[dict[str, Any]],
     *,
@@ -211,11 +265,15 @@ def build_cleaning_result(
 ) -> dict[str, Any]:
     groups: list[dict[str, Any]] = []
     for item in analyses:
-        quality_excluded = bool(auto_exclude_quality and item.get("clear_discard"))
+        quality_excluded = bool(auto_exclude_quality and item.get("hard_reject"))
+        if item.get("hard_reject"):
+            item["suggestion"] = "remove" if quality_excluded else "review"
+            item["confidence"] = max(float(item.get("confidence") or 0), 0.99)
         item["auto_excluded"] = quality_excluded
-        item["auto_exclusion_source"] = "system_quality_threshold" if quality_excluded else None
-    for cluster_indexes in _complete_link_clusters(analyses):
+        item["auto_exclusion_source"] = "system_unrecoverable_blur" if quality_excluded else None
+    for cluster_indexes in DuplicateGrouper().group(analyses):
         cluster = [analyses[index] for index in cluster_indexes]
+        _mark_expression_outliers(cluster)
         ranked = sorted(cluster, key=_preferred_sort_key)
         preferred = ranked[0]
         exact_hashes = [item.get("content_sha256") for item in cluster if item.get("content_sha256")]
@@ -245,15 +303,15 @@ def build_cleaning_result(
             threshold = 1 if relation["type"] == "exact" else NEAR_PHASH_THRESHOLD if relation["type"] == "near" else BURST_PHASH_THRESHOLD
             distance = int(relation.get("distance") or 0)
             confidence_values.append(1.0 if relation["type"] in {"exact", "preferred"} else max(0.0, 1 - distance / max(threshold, 1)))
-            if is_preferred:
+            if item.get("hard_reject"):
+                item["suggestion"] = "remove" if auto_exclude_quality else "review"
+                item["confidence"] = max(float(item.get("confidence") or 0), 0.99)
+            elif is_preferred:
                 item["suggestion"] = "keep"
                 item["confidence"] = max(float(item.get("confidence") or 0), 0.95)
             elif exact_copy:
                 item["suggestion"] = "remove"
                 item["confidence"] = 1.0
-            elif item.get("clear_discard"):
-                item["suggestion"] = "remove"
-                item["confidence"] = max(float(item.get("confidence") or 0), 0.9)
             elif relation["type"] == "near" and distance <= 4 and float(relation.get("histogram_distance") or 1) <= 0.10:
                 item["suggestion"] = "remove"
                 item["confidence"] = 0.9
@@ -262,12 +320,12 @@ def build_cleaning_result(
                 item["confidence"] = max(float(item.get("confidence") or 0), 0.75)
             auto_excluded = False
             auto_exclusion_source = None
-            if not is_preferred and auto_exclude_exact and exact_copy:
+            if auto_exclude_quality and item.get("hard_reject"):
+                auto_excluded = True
+                auto_exclusion_source = "system_unrecoverable_blur"
+            elif not is_preferred and auto_exclude_exact and exact_copy:
                 auto_excluded = True
                 auto_exclusion_source = "system_exact_duplicate"
-            elif not is_preferred and auto_exclude_quality and item.get("clear_discard"):
-                auto_excluded = True
-                auto_exclusion_source = "system_quality_threshold"
             item["auto_excluded"] = auto_excluded
             item["auto_exclusion_source"] = auto_exclusion_source
             members.append({
@@ -312,6 +370,40 @@ def build_cleaning_result(
         "analysis_failures": sum(bool(item.get("features", {}).get("fallback_used")) for item in analyses),
     }
     return {"album_id": album_id, "summary": summary, "groups": groups, "per_photo": analyses}
+
+
+class CleaningDecisionPolicy:
+    version = "cleaning-policy-v3"
+
+    def apply(
+        self,
+        album_id: str,
+        analyses: list[dict[str, Any]],
+        *,
+        auto_exclude_exact: bool = True,
+        auto_exclude_quality: bool = False,
+    ) -> dict[str, Any]:
+        return _build_cleaning_result(
+            album_id,
+            analyses,
+            auto_exclude_exact=auto_exclude_exact,
+            auto_exclude_quality=auto_exclude_quality,
+        )
+
+
+def build_cleaning_result(
+    album_id: str,
+    analyses: list[dict[str, Any]],
+    *,
+    auto_exclude_exact: bool = True,
+    auto_exclude_quality: bool = False,
+) -> dict[str, Any]:
+    return CleaningDecisionPolicy().apply(
+        album_id,
+        analyses,
+        auto_exclude_exact=auto_exclude_exact,
+        auto_exclude_quality=auto_exclude_quality,
+    )
 
 
 def detect_duplicates(photos: list[dict[str, Any]]) -> list[list[str]]:

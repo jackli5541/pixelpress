@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import UTC, datetime
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 
 from app.common.enums import AlbumStatus
@@ -162,6 +164,42 @@ class RenderArtifactService:
     async def load_print_html(self, album) -> str | None:
         return await self._load_html(album, path_attr="print_html_path", artifact_kind="print")
 
+    async def load_manifest(self, album) -> dict[str, Any] | None:
+        storage_key = getattr(album, "render_manifest_path", None)
+        if not storage_key:
+            return None
+        try:
+            return json.loads((await self.storage.open_file(storage_key)).decode("utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+
+    async def materialize_print_assets(self, manifest: dict[str, Any], target_dir: Path) -> dict[str, str]:
+        replacements: dict[str, str] = {}
+        target_dir.mkdir(parents=True, exist_ok=True)
+        semaphore = asyncio.Semaphore(8)
+
+        async def materialize(photo_id: str, storage_key: str) -> tuple[str, str]:
+            target = target_dir / f"{photo_id}.jpg"
+            async with semaphore:
+                await self.storage.copy_to_path(str(storage_key), target)
+            return photo_id, target.as_uri()
+
+        completed = await asyncio.gather(
+            *(materialize(str(photo_id), str(storage_key)) for photo_id, storage_key in (manifest.get("print_assets") or {}).items())
+        )
+        for photo_id, local_uri in completed:
+            replacements[f"pixpress-asset://{photo_id}"] = local_uri
+        return replacements
+
+    @staticmethod
+    def rewrite_html_sources(html: str, replacements: dict[str, str]) -> str:
+        if not replacements:
+            return html
+        parser = _PreviewHtmlRewriter(replacements)
+        parser.feed(html)
+        parser.close()
+        return parser.output()
+
     async def delete_render_artifacts(self, *storage_keys: str | None) -> None:
         for storage_key in storage_keys:
             if not storage_key:
@@ -218,6 +256,9 @@ class RenderArtifactService:
 
 async def clear_render_artifacts(album, render_artifacts: RenderArtifactService, *, stale_status: str | None = None) -> None:
     keys = render_artifacts.current_artifact_keys(album)
+    # Print assets are content-addressed by photo and print profile. Keep them
+    # when only copy, crop, or visual style changes so the next render skips
+    # image decoding and JPEG encoding.
     await render_artifacts.prune_replaced_render_artifacts(*keys)
     album.preview_html_path = None
     album.print_html_path = None

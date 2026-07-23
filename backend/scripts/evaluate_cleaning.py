@@ -16,9 +16,23 @@ from app.engines.cleaning_engine.service import run_cleaning  # noqa: E402
 GATES = {
     "duplicate_precision": 0.98,
     "duplicate_recall": 0.90,
-    "removal_precision": 0.98,
+    "removal_precision": 0.995,
     "max_false_removal_rate": 0.005,
     "preferred_accuracy": 0.85,
+    "hard_blur_precision": 0.995,
+    "max_hard_blur_false_removal_rate": 0.005,
+    "resize_consistency": 0.99,
+}
+REQUIRED_CALIBRATION_FIELDS = {
+    "blur_type",
+    "blur_direction",
+    "blur_strength",
+    "texture_class",
+    "recognizable_at_1024",
+    "recognizable_at_512",
+    "quality_label",
+    "should_remove",
+    "must_keep",
 }
 
 
@@ -47,6 +61,10 @@ def _pairs(groups: list[set[str]]) -> set[tuple[str, str]]:
 
 
 def evaluate(records: list[dict[str, Any]], base_dir: Path) -> dict[str, Any]:
+    for index, item in enumerate(records, 1):
+        missing = REQUIRED_CALIBRATION_FIELDS - item.keys()
+        if missing:
+            raise ValueError(f"manifest row {index} missing calibration fields: {', '.join(sorted(missing))}")
     albums: dict[str, list[dict[str, Any]]] = defaultdict(list)
     labels = {str(item["id"]): item for item in records}
     for item in records:
@@ -63,14 +81,15 @@ def evaluate(records: list[dict[str, Any]], base_dir: Path) -> dict[str, Any]:
 
     predicted_groups: list[set[str]] = []
     preferred_predictions: dict[frozenset[str], str] = {}
-    suggestions: dict[str, str] = {}
     auto_excluded: set[str] = set()
+    hard_rejected: set[str] = set()
     for album_id, photos in albums.items():
-        result = run_cleaning(album_id, photos, version="evaluation", auto_exclude_exact=True)
+        result = run_cleaning(album_id, photos, version="evaluation", auto_exclude_exact=True, auto_exclude_quality=True)
         for item in result["per_photo"]:
-            suggestions[item["photo_id"]] = item["suggestion"]
             if item.get("auto_excluded"):
                 auto_excluded.add(item["photo_id"])
+            if item.get("hard_reject"):
+                hard_rejected.add(item["photo_id"])
         for group in result["groups"]:
             member_ids = {member["photo_id"] for member in group["members"]}
             predicted_groups.append(member_ids)
@@ -85,10 +104,29 @@ def evaluate(records: list[dict[str, Any]], base_dir: Path) -> dict[str, Any]:
     truth_pairs = _pairs(truth_groups)
     true_pairs = predicted_pairs & truth_pairs
 
-    remove_predictions = {photo_id for photo_id, suggestion in suggestions.items() if suggestion == "remove"}
     should_remove = {photo_id for photo_id, item in labels.items() if item.get("should_remove") is True}
-    must_keep = {photo_id for photo_id, item in labels.items() if item.get("quality_label") == "must_keep"}
+    must_keep = {
+        photo_id
+        for photo_id, item in labels.items()
+        if item.get("must_keep") is True or item.get("quality_label") == "must_keep"
+    }
     baseline_excluded = {photo_id for photo_id, item in labels.items() if item.get("baseline_excluded") is True}
+    low_texture_must_keep = {
+        photo_id
+        for photo_id, item in labels.items()
+        if photo_id in must_keep and item.get("texture_class") == "low"
+    }
+    resize_families: dict[str, list[str]] = defaultdict(list)
+    for photo_id, item in labels.items():
+        if item.get("resize_family_id"):
+            resize_families[str(item["resize_family_id"])].append(photo_id)
+    resize_comparisons = 0
+    resize_consistent = 0
+    for members in resize_families.values():
+        if len(members) < 2:
+            continue
+        resize_comparisons += 1
+        resize_consistent += int(len({member in hard_rejected for member in members}) == 1)
 
     preferred_total = 0
     preferred_correct = 0
@@ -104,11 +142,15 @@ def evaluate(records: list[dict[str, Any]], base_dir: Path) -> dict[str, Any]:
     metric_counts = {
         "duplicate_precision": (len(true_pairs), len(predicted_pairs)),
         "duplicate_recall": (len(true_pairs), len(truth_pairs)),
-        "removal_precision": (len(remove_predictions & should_remove), len(remove_predictions)),
+        "removal_precision": (len(auto_excluded & should_remove), len(auto_excluded)),
         "false_removal_rate": (len(auto_excluded & must_keep), len(must_keep)),
         "preferred_accuracy": (preferred_correct, preferred_total),
         "high_quality_retention": (len(must_keep - auto_excluded), len(must_keep)),
         "baseline_high_quality_retention": (len(must_keep - baseline_excluded), len(must_keep)),
+        "hard_blur_precision": (len(hard_rejected & should_remove), len(hard_rejected)),
+        "hard_blur_false_removal_rate": (len(hard_rejected & must_keep), len(must_keep)),
+        "low_texture_retention": (len(low_texture_must_keep - hard_rejected), len(low_texture_must_keep)),
+        "resize_consistency": (resize_consistent, resize_comparisons),
     }
     metrics = {name: _safe_ratio(*counts) for name, counts in metric_counts.items()}
     confidence_intervals = {name: _wilson_interval(*counts) for name, counts in metric_counts.items()}
@@ -120,6 +162,11 @@ def evaluate(records: list[dict[str, Any]], base_dir: Path) -> dict[str, Any]:
         and confidence_intervals["false_removal_rate"][1] <= GATES["max_false_removal_rate"]
         and metrics["preferred_accuracy"] >= GATES["preferred_accuracy"]
         and metrics["high_quality_retention"] >= metrics["baseline_high_quality_retention"]
+        and metrics["hard_blur_precision"] >= GATES["hard_blur_precision"]
+        and metrics["hard_blur_false_removal_rate"] <= GATES["max_hard_blur_false_removal_rate"]
+        and confidence_intervals["hard_blur_false_removal_rate"][1] <= GATES["max_hard_blur_false_removal_rate"]
+        and metrics["low_texture_retention"] == 1.0
+        and metrics["resize_consistency"] >= GATES["resize_consistency"]
     )
     return {
         "passed": passed,

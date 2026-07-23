@@ -25,6 +25,14 @@ class FileStorage(Protocol):
         content_type: str,
     ) -> StoredFile: ...
 
+    async def save_export_from_path(
+        self,
+        album_id: str,
+        export_name: str,
+        source_path: Path,
+        content_type: str,
+    ) -> StoredFile: ...
+
     async def save_artifact(
         self,
         album_id: str,
@@ -36,6 +44,8 @@ class FileStorage(Protocol):
     async def delete_file(self, storage_key: str) -> None: ...
 
     async def open_file(self, storage_key: str) -> bytes: ...
+
+    async def copy_to_path(self, storage_key: str, target_path: Path) -> None: ...
 
     def build_photo_access_path(self, album_id: str, photo_id: str) -> str: ...
 

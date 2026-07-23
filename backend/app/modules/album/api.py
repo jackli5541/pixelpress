@@ -20,6 +20,7 @@ class CreateAlbumPayload(BaseModel):
     theme_style: str = "minimal"
     cover_title: str | None = None
     print_spec: dict | None = None
+    layout_version: str | None = None
 
 
 class UpdateAlbumPayload(BaseModel):

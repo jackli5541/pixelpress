@@ -115,8 +115,19 @@ async function doExport(format: 'html' | 'pdf') {
   activeExportTaskId.value = ''
   activeExportFormat.value = format
   try {
-    const response = await httpPost<{ task: TaskItem; status_url: string }>(`/albums/${albumId.value}/export?format=${format}`)
+    const response = await httpPost<{
+      task?: TaskItem
+      status_url?: string
+      cache_hit?: boolean
+      export?: ExportItem
+    }>(`/albums/${albumId.value}/export?format=${format}`)
+    if (response.data.cache_hit && response.data.export) {
+      await loadData()
+      successMessage.value = `${getSuccessExportMessage(format)} 已复用相同版本文件。`
+      return
+    }
     const task = response.data.task
+    if (!task) throw new Error('导出任务未创建。')
     activeExportTaskId.value = task.id
     pendingMessage.value = getQueuedExportMessage(format)
     await refreshTask(task.id)
@@ -248,7 +259,7 @@ onBeforeUnmount(() => {
             先查看整册预览，再决定最终导出格式。
           </div>
           <div v-else class="mt-4 max-h-[360px] overflow-auto rounded-[22px] bg-white">
-            <div v-html="previewHtml" />
+            <iframe title="相册预览" class="h-[520px] w-full border-0 bg-white" :srcdoc="previewHtml" sandbox="allow-same-origin" />
           </div>
         </div>
 
@@ -318,7 +329,7 @@ onBeforeUnmount(() => {
             关闭
           </button>
         </div>
-        <div class="max-h-[75vh] overflow-auto bg-white px-4 py-4" v-html="previewHtml" />
+        <iframe title="整册预览" class="h-[75vh] w-full border-0 bg-white" :srcdoc="previewHtml" sandbox="allow-same-origin" />
       </div>
     </div>
   </div>

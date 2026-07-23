@@ -21,7 +21,7 @@ router = APIRouter(prefix="/albums/{album_id}/export", tags=["export"])
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(get_settings().rate_limit_export, key_func=get_remote_address)
+@limiter.limit(lambda: get_settings().rate_limit_export, key_func=get_remote_address)
 async def export_endpoint(
     request: Request,
     album_id: str,
@@ -35,6 +35,8 @@ async def export_endpoint(
         task = await ExportService(db).request_export_album(album_id, user.id, format)
     except TaskConflictError as exc:
         raise HTTPException(status_code=409, detail={"message": "active task exists", "task": exc.task}) from exc
+    if task is not None and task.get("cache_hit"):
+        return success_response(task, "export cache hit")
     if task is None:
         raise HTTPException(status_code=400, detail="请先执行排版渲染后再导出。")
     return success_response({"task": task, "status_url": f"/api/v1/albums/{album_id}/tasks/{task['id']}"}, "导出任务已提交")

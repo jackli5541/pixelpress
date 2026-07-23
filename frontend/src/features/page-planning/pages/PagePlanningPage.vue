@@ -20,6 +20,7 @@ interface PhotoItem {
 
 interface PageItem {
   id: string
+  side?: 'left' | 'right' | null
   page_number: number
   template: string
   photo_ids: string[]
@@ -42,6 +43,27 @@ interface PreviewData {
   html: string
 }
 
+interface SpreadItem {
+  id: string
+  chapter_id: string | null
+  spread_number: number
+  recipe_key: string
+  headline: string
+  body: string
+  needs_review: boolean
+  meta?: {
+    candidate_recipe_keys?: string[]
+    candidate_rank?: number
+  }
+  pages: PageItem[]
+}
+
+const styleOptions = [
+  { key: 'minimal_white', label: '极简留白', note: '大面积白纸与克制字阶，最接近参考样册。' },
+  { key: 'editorial_journal', label: '编辑纪实', note: '更清晰的标题层级与红色编辑标记。' },
+  { key: 'warm_memory', label: '温暖记忆', note: '柔和纸色与暖色强调，适合家庭记录。' },
+] as const
+
 const ORPHAN_ID = '__orphan__'
 const route = useRoute()
 const router = useRouter()
@@ -58,6 +80,13 @@ const previewHtml = ref('')
 const showPreview = ref(false)
 const expandedChapter = ref<string | null>(null)
 const activeTaskType = ref<'plan_pages' | 'render_layout' | null>(null)
+const spreads = ref<SpreadItem[]>([])
+const layoutVersion = ref<'legacy_page_v1' | 'spread_v2'>('spread_v2')
+const selectedStyle = ref('minimal_white')
+const styleSamples = ref<Record<string, string>>({})
+const styleLoading = ref(false)
+const candidateSamples = ref<Record<string, string>>({})
+const candidateLoading = ref(false)
 
 const albumId = computed(() => {
   const id = route.params.id
@@ -65,6 +94,7 @@ const albumId = computed(() => {
 })
 
 const needChapters = computed(() => ['draft', 'uploaded', 'cleaned'].includes(albumStatus.value))
+const isSpreadV2 = computed(() => layoutVersion.value === 'spread_v2')
 
 const templateLabels: Record<string, string> = {
   full_page: '整页',
@@ -118,6 +148,8 @@ const { latestTask, refreshTask, startPolling, stopPolling } = useAlbumTaskMonit
 
 async function applyPlanningTaskOutcome(successText: string, task = latestTask.value) {
   await loadData()
+  await loadStyleSamples()
+  await loadCandidateSamples()
   if (task?.task_status === 'succeeded') {
     successMessage.value = successText
     setTimeout(() => {
@@ -157,16 +189,20 @@ async function loadData() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [pageResponse, photoResponse, albumResponse, chapterResponse] = await Promise.all([
+    const [pageResponse, photoResponse, albumResponse, chapterResponse, spreadResponse] = await Promise.all([
       httpGet<PageItem[]>(`/albums/${albumId.value}/pages`),
       httpGet<{ items: PhotoItem[] }>(`/albums/${albumId.value}/photos?recommendation=keep`),
       httpGet<any>(`/albums/${albumId.value}`),
       httpGet<ChapterItem[]>(`/albums/${albumId.value}/chapters`),
+      httpGet<SpreadItem[]>(`/albums/${albumId.value}/spreads`),
     ])
     pages.value = (pageResponse.data || []).sort((a, b) => (a.page_number || 0) - (b.page_number || 0))
     allPhotos.value = photoResponse.data.items || []
     chapters.value = chapterResponse.data || []
     albumStatus.value = albumResponse.data?.status || 'draft'
+    layoutVersion.value = albumResponse.data?.layout_version || 'legacy_page_v1'
+    selectedStyle.value = albumResponse.data?.theme_style || 'minimal_white'
+    spreads.value = spreadResponse.data || []
   } catch (error: any) {
     errorMessage.value = error.message
   } finally {
@@ -184,7 +220,7 @@ async function startPlan() {
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const response = await httpPost<{ task: { id: string } }>(`/albums/${albumId.value}/plan`)
+    const response = await httpPost<{ task: { id: string } }>(`/albums/${albumId.value}/plan?layout_version=spread_v2`)
     const taskId = response.data.task.id
     await loadLatestTask('plan_pages', taskId)
     startTaskPolling('plan_pages', taskId, async (task) => {
@@ -270,6 +306,86 @@ async function loadPreview() {
   }
 }
 
+async function loadStyleSamples() {
+  if (!albumId.value || !spreads.value.length) return
+  styleLoading.value = true
+  try {
+    const responses = await Promise.all(
+      styleOptions.map((style) =>
+        httpGet<PreviewData>(`/albums/${albumId.value}/preview?sample=true&style_key=${style.key}`),
+      ),
+    )
+    styleSamples.value = Object.fromEntries(styleOptions.map((style, index) => [style.key, responses[index].data.html]))
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    styleLoading.value = false
+  }
+}
+
+function candidateSampleKey(spreadId: string, recipeKey: string) {
+  return `${spreadId}:${recipeKey}`
+}
+
+function candidateRecipes(spread: SpreadItem) {
+  return spread.meta?.candidate_recipe_keys?.length ? spread.meta.candidate_recipe_keys : [spread.recipe_key]
+}
+
+async function loadCandidateSamples() {
+  if (!albumId.value || !spreads.value.length) {
+    candidateSamples.value = {}
+    return
+  }
+  candidateLoading.value = true
+  try {
+    const requests = spreads.value.flatMap((spread) =>
+      candidateRecipes(spread).map(async (recipeKey) => {
+        const response = await httpGet<PreviewData>(
+          `/albums/${albumId.value}/preview?sample=true&style_key=${selectedStyle.value}&spread_id=${spread.id}&recipe_key=${recipeKey}`,
+        )
+        return [candidateSampleKey(spread.id, recipeKey), response.data.html] as const
+      }),
+    )
+    candidateSamples.value = Object.fromEntries(await Promise.all(requests))
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    candidateLoading.value = false
+  }
+}
+
+async function chooseRecipe(spread: SpreadItem, recipeKey: string) {
+  if (!albumId.value || spread.recipe_key === recipeKey) return
+  actionLoading.value = true
+  errorMessage.value = ''
+  try {
+    await httpPatch(`/albums/${albumId.value}/spreads/${spread.id}`, { recipe_key: recipeKey })
+    await loadData()
+    await loadCandidateSamples()
+    successMessage.value = 'Layout choice saved. Render again before exporting.'
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function chooseStyle(styleKey: string) {
+  if (!albumId.value || selectedStyle.value === styleKey) return
+  actionLoading.value = true
+  try {
+    await httpPatch(`/albums/${albumId.value}`, { theme_style: styleKey })
+    selectedStyle.value = styleKey
+    albumStatus.value = 'planned'
+    await loadCandidateSamples()
+    successMessage.value = '整册风格已确认。照片分组保持不变，可以继续渲染。'
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 function goNext() {
   void router.push(`/albums/${albumId.value}/export`)
 }
@@ -282,6 +398,8 @@ const { isDragging, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, get
 onMounted(async () => {
   await loadData()
   await refreshTask()
+  await loadStyleSamples()
+  await loadCandidateSamples()
 })
 watch(
   () => albumId.value,
@@ -290,6 +408,8 @@ watch(
     activeTaskType.value = null
     await loadData()
     await refreshTask()
+    await loadStyleSamples()
+    await loadCandidateSamples()
   },
 )
 </script>
@@ -366,7 +486,101 @@ watch(
       <p v-if="isDragging" class="mt-4 text-xs text-[var(--story-faint)]">拖动照片到目标页面，即可调整排版归属。</p>
     </SectionCard>
 
-    <div v-if="chapterGroups.length > 0" class="space-y-4">
+    <section v-if="isSpreadV2 && spreads.length" class="space-y-6">
+      <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase text-[var(--story-faint)]">Book Style</p>
+          <h2 class="mt-2 font-story text-4xl text-[var(--story-gold-soft)]">选择整册视觉风格</h2>
+          <p class="mt-2 text-sm text-[var(--story-muted)]">三套样张使用完全相同的照片分组和跨页配方，切换不会重新调用 AI。</p>
+        </div>
+        <p class="text-sm text-[var(--story-muted)]">{{ spreads.length }} 个跨页 · {{ pages.length }} 个内容页</p>
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-3">
+        <article
+          v-for="style in styleOptions"
+          :key="style.key"
+          class="overflow-hidden rounded-lg border bg-white transition"
+          :class="selectedStyle === style.key ? 'border-[#9f2f25] ring-2 ring-[#9f2f25]/20' : 'border-black/10'"
+        >
+          <div class="style-sample-viewport bg-[#e7e5e2]">
+            <iframe
+              v-if="styleSamples[style.key]"
+              :title="`${style.label} 样张`"
+              :srcdoc="styleSamples[style.key]"
+              sandbox="allow-same-origin"
+              loading="lazy"
+              tabindex="-1"
+            />
+            <div v-else class="flex h-full items-center justify-center text-sm text-[#666]">
+              {{ styleLoading ? '正在生成样张...' : '暂无样张' }}
+            </div>
+          </div>
+          <div class="flex items-start justify-between gap-4 p-4">
+            <div>
+              <h3 class="text-base font-semibold text-[#1d1d1d]">{{ style.label }}</h3>
+              <p class="mt-1 text-xs leading-5 text-[#666]">{{ style.note }}</p>
+            </div>
+            <button
+              class="shrink-0 rounded-md border px-3 py-2 text-xs"
+              :class="selectedStyle === style.key ? 'border-[#9f2f25] bg-[#9f2f25] text-white' : 'border-black/15 text-[#222]'"
+              :disabled="actionLoading"
+              @click="chooseStyle(style.key)"
+            >
+              {{ selectedStyle === style.key ? '已选择' : '选择' }}
+            </button>
+          </div>
+        </article>
+      </div>
+
+      <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <article v-for="spread in spreads" :key="spread.id" class="rounded-lg border border-white/10 bg-white/5 p-4">
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs text-[var(--story-faint)]">跨页 {{ spread.spread_number }} · {{ spread.recipe_key }}</p>
+            <span v-if="spread.needs_review" class="rounded-sm bg-[#9f2f25] px-2 py-1 text-xs text-white">待复核</span>
+          </div>
+          <h3 class="mt-3 text-base text-[var(--story-text)]">{{ spread.headline || '未命名片段' }}</h3>
+          <p class="mt-2 min-h-10 text-xs leading-5 text-[var(--story-muted)]">{{ spread.body || '正文留空，可在确认后补写。' }}</p>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <div v-for="page in spread.pages" :key="page.id" class="border border-white/10 px-3 py-2 text-xs text-[var(--story-muted)]">
+              {{ page.side === 'left' ? '左页' : '右页' }} · {{ page.photo_ids.length }} 张
+            </div>
+          </div>
+          <div class="mt-4 border-t border-white/10 pt-3">
+            <div class="mb-2 flex items-center justify-between gap-2">
+              <p class="text-xs uppercase tracking-[0.12em] text-[var(--story-faint)]">Layout candidates</p>
+              <span class="text-xs text-[var(--story-muted)]">{{ candidateRecipes(spread).length }} options</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                v-for="recipeKey in candidateRecipes(spread)"
+                :key="recipeKey"
+                type="button"
+                class="candidate-card text-left"
+                :class="spread.recipe_key === recipeKey ? 'candidate-card-active' : ''"
+                :disabled="actionLoading"
+                @click="chooseRecipe(spread, recipeKey)"
+              >
+                <div class="candidate-sample-viewport">
+                  <iframe
+                    v-if="candidateSamples[candidateSampleKey(spread.id, recipeKey)]"
+                    :title="`Spread ${spread.spread_number} ${recipeKey}`"
+                    :srcdoc="candidateSamples[candidateSampleKey(spread.id, recipeKey)]"
+                    sandbox="allow-same-origin"
+                    loading="lazy"
+                    tabindex="-1"
+                  />
+                  <span v-else class="candidate-placeholder">{{ candidateLoading ? 'Loading' : 'Preview unavailable' }}</span>
+                </div>
+                <span class="mt-2 block truncate px-1 text-[10px] text-[var(--story-muted)]">{{ recipeKey }}</span>
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <div v-if="chapterGroups.length > 0 && !isSpreadV2" class="space-y-4">
       <article v-for="group in chapterGroups" :key="group.chapter.id" class="story-panel overflow-hidden rounded-[28px]">
         <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-5">
           <div>
@@ -411,11 +625,12 @@ watch(
                 </div>
               </div>
 
-              <div
+              <iframe
                 v-if="page.preview_available && page.preview_snippet"
-                class="border-y border-[rgba(224,177,106,0.12)] bg-white/80"
-                style="max-height: 140px; overflow: hidden"
-                v-html="page.preview_snippet"
+                title="页面缩略预览"
+                class="h-[140px] w-full border-y border-[rgba(224,177,106,0.12)] bg-white/80"
+                :srcdoc="page.preview_snippet"
+                sandbox="allow-same-origin"
               />
 
               <div class="px-4 py-4">
@@ -464,7 +679,7 @@ watch(
     </div>
 
     <SectionCard
-      v-if="orphanPages.length > 0"
+      v-if="orphanPages.length > 0 && !isSpreadV2"
       title="未归属章节的书页"
       :description="`${orphanPages.length} 个书页尚未归入任何章节，但已经完成分页。`"
       tone="film"
@@ -501,11 +716,12 @@ watch(
             </div>
           </div>
 
-          <div
+          <iframe
             v-if="page.preview_available && page.preview_snippet"
-            class="border-y border-[rgba(224,177,106,0.12)] bg-white/80"
-            style="max-height: 140px; overflow: hidden"
-            v-html="page.preview_snippet"
+            title="页面缩略预览"
+            class="h-[140px] w-full border-y border-[rgba(224,177,106,0.12)] bg-white/80"
+            :srcdoc="page.preview_snippet"
+            sandbox="allow-same-origin"
           />
 
           <div class="px-4 py-4">
@@ -531,7 +747,7 @@ watch(
     </SectionCard>
 
     <SectionCard
-      v-if="totalUnassignedPhotos.length > 0 && pages.length > 0"
+      v-if="totalUnassignedPhotos.length > 0 && pages.length > 0 && !isSpreadV2"
       title="未进入书页的镜头"
       :description="`${totalUnassignedPhotos.length} 张照片还没有排版到任何页面。`"
       tone="accent"
@@ -565,8 +781,71 @@ watch(
             关闭
           </button>
         </div>
-        <div class="max-h-[75vh] overflow-auto bg-white px-4 py-4" v-html="previewHtml" />
+        <iframe
+          title="整册预览"
+          class="h-[75vh] w-full bg-white"
+          :srcdoc="previewHtml"
+          sandbox="allow-same-origin"
+        />
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.style-sample-viewport {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+}
+
+.style-sample-viewport iframe {
+  width: 256.42%;
+  height: 256.42%;
+  border: 0;
+  pointer-events: none;
+  transform: scale(0.39);
+  transform-origin: top left;
+}
+
+.candidate-card {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 4px;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.candidate-card:hover:not(:disabled),
+.candidate-card-active {
+  border-color: #e0b16a;
+  background: rgba(224, 177, 106, 0.1);
+}
+
+.candidate-sample-viewport {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #e7e5e2;
+}
+
+.candidate-sample-viewport iframe {
+  width: 256.42%;
+  height: 256.42%;
+  border: 0;
+  pointer-events: none;
+  transform: scale(0.39);
+  transform-origin: top left;
+}
+
+.candidate-placeholder {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: #555;
+  font-size: 10px;
+  text-align: center;
+}
+</style>

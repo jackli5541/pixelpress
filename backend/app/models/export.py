@@ -16,6 +16,8 @@ class Export(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="queued", nullable=False)
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    render_revision: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    profile_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     album = relationship("Album", back_populates="exports")
     task = relationship("Task", back_populates="exports")

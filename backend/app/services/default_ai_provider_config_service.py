@@ -1,15 +1,30 @@
 from __future__ import annotations
 
+import base64
+from io import BytesIO
+
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.factory import get_ai_provider
-from app.ai.types import ProviderConnectionConfig, ProviderRequest
+from app.ai.factory import get_multimodal_embedding_provider
+from app.ai.types import ImageEmbeddingRequest, ImagePayload, ProviderConnectionConfig, ProviderRequest
 from app.core.config import get_settings
 from app.repositories.default_ai_provider_config_repo import DefaultAIProviderConfigRepository
 from app.services.secret_service import SecretService
 
 
-DEFAULT_STAGES = ("chapter", "layout")
+DEFAULT_STAGES = ("chapter", "chapter_embedding", "layout")
+STAGE_PROVIDERS = {
+    "chapter": {"openai_compatible"},
+    "chapter_embedding": {"dashscope_multimodal_embedding"},
+    "layout": {"openai_compatible"},
+}
+
+
+def validate_stage_provider(stage: str, provider_type: str) -> None:
+    if stage not in DEFAULT_STAGES or provider_type not in STAGE_PROVIDERS[stage]:
+        raise ValueError(f"unsupported provider for {stage}: {provider_type}")
 
 
 class DefaultAIProviderConfigService:
@@ -37,19 +52,39 @@ class DefaultAIProviderConfigService:
     async def ensure_defaults(self) -> list[dict]:
         settings = get_settings()
         values = {
-            "chapter": (settings.ai_provider_b2, settings.ai_model_b2),
-            "layout": (settings.ai_provider_b3, settings.ai_model_b3),
+            "chapter": settings.resolved_chapter_config,
+            "chapter_embedding": settings.resolved_embedding_config,
+            "layout": settings.resolved_layout_config,
         }
         changed = False
-        for stage, (provider_type, model) in values.items():
-            if await self.repo.get_by_stage(stage):
+        for stage, (provider_type, base_url, api_key, model) in values.items():
+            existing = await self.repo.get_by_stage(stage)
+            inherited_embedding_key = settings.resolved_embedding_config[2] or ""
+            if existing:
+                updates = {}
+                # Defaults are seeded before an operator may add backend/.env.
+                # Keep those env-seeded defaults synchronized, while an admin
+                # edit remains authoritative once it has an audit actor.
+                is_env_seeded = existing.created_by_admin_id is None and existing.updated_by_admin_id is None
+                if is_env_seeded and provider_type and existing.provider_type != provider_type:
+                    updates["provider_type"] = provider_type
+                if (is_env_seeded or not existing.base_url) and base_url and existing.base_url != base_url:
+                    updates["base_url"] = base_url
+                if (is_env_seeded or not existing.model) and model and existing.model != model:
+                    updates["model"] = model
+                if api_key and (is_env_seeded or not existing.api_key_masked) and existing.api_key_masked != self.secret_service.mask_api_key(api_key):
+                    updates["api_key_ciphertext"] = self.secret_service.encrypt_api_key(api_key)
+                    updates["api_key_masked"] = self.secret_service.mask_api_key(api_key)
+                if updates:
+                    await self.repo.update(existing, updates)
+                    changed = True
                 continue
-            api_key = settings.llm_api_key or ""
+            api_key = api_key or ""
             await self.repo.create(
                 {
                     "stage": stage,
                     "provider_type": provider_type or "openai_compatible",
-                    "base_url": settings.llm_api_url,
+                    "base_url": base_url,
                     "model": model or "",
                     "api_key_ciphertext": self.secret_service.encrypt_api_key(api_key),
                     "api_key_masked": self.secret_service.mask_api_key(api_key),
@@ -70,8 +105,10 @@ class DefaultAIProviderConfigService:
         config = await self.repo.get_by_stage(stage)
         if config is None:
             return None
+        provider_type = payload.get("provider_type", config.provider_type)
+        validate_stage_provider(stage, provider_type)
         updates = {
-            "provider_type": payload.get("provider_type", config.provider_type),
+            "provider_type": provider_type,
             "base_url": payload.get("base_url", config.base_url),
             "model": payload.get("model", config.model),
             "is_active": payload.get("is_active", config.is_active),
@@ -113,6 +150,24 @@ class DefaultAIProviderConfigService:
             source="global_default_config",
             config_id=config.id,
         )
+        if stage == "chapter_embedding":
+            response = await get_multimodal_embedding_provider(connection.provider).embed_images(
+                ImageEmbeddingRequest(
+                    images=[ImagePayload(media_type="image/jpeg", data_base64=self._test_image_base64())],
+                    model=connection.model,
+                    dimension=get_settings().chapter_embedding_dimension,
+                    connection=connection,
+                )
+            )
+            return {
+                "config_id": config.id,
+                "stage": stage,
+                "provider": response.provider,
+                "model": response.model,
+                "source": connection.source,
+                "debug": response.debug,
+                "payload": {"status": "ok", "dimension": len(response.embeddings[0])},
+            }
         response = await get_ai_provider(connection.provider).infer_json(
             ProviderRequest(
                 system_prompt='Return a JSON object with {"status":"ok"}.',
@@ -123,3 +178,9 @@ class DefaultAIProviderConfigService:
             )
         )
         return {"config_id": config.id, "stage": stage, "provider": response.provider, "model": response.model, "source": connection.source, "debug": response.debug, "payload": response.payload}
+
+    @staticmethod
+    def _test_image_base64() -> str:
+        output = BytesIO()
+        Image.new("RGB", (64, 64), color=(64, 128, 192)).save(output, format="JPEG", quality=85)
+        return base64.b64encode(output.getvalue()).decode("ascii")

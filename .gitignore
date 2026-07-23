@@ -44,12 +44,15 @@ Thumbs.db
 *.log
 
 # ==================== Local temp artifacts ====================
+/tmp/
+/output/
 .pytest_cache/
 frontend/.pytest_cache/
 .tmp*/
 tmp_*/
 tmp_*.bat
 backend/tmp_*.py
+backend/models/cleaning/anime-face_yolov3.onnx
 
 # ==================== Local verification assets ====================
 实施计划/

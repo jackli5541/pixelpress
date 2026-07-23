@@ -28,3 +28,25 @@ class ExportRepository:
             select(Export).where(Export.album_id == album_id, Export.id == export_id)
         )
         return result.scalar_one_or_none()
+
+    async def find_completed(
+        self,
+        album_id: str,
+        *,
+        format: str,
+        render_revision: int,
+        profile_hash: str,
+    ) -> Export | None:
+        result = await self.session.execute(
+            select(Export)
+            .where(
+                Export.album_id == album_id,
+                Export.format == format,
+                Export.status == "completed",
+                Export.render_revision == render_revision,
+                Export.profile_hash == profile_hash,
+            )
+            .order_by(Export.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()

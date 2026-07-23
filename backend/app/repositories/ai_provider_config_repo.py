@@ -22,10 +22,18 @@ class AIProviderConfigRepository:
         result = await self.session.execute(select(AIProviderConfig).where(AIProviderConfig.id == config_id))
         return result.scalar_one_or_none()
 
-    async def get_active_config(self, project_id: str) -> AIProviderConfig | None:
+    async def get_active_config(self, project_id: str, stage: str) -> AIProviderConfig | None:
         result = await self.session.execute(
             select(AIProviderConfig)
-            .where(AIProviderConfig.project_id == project_id, AIProviderConfig.is_active.is_(True))
+            .where(AIProviderConfig.project_id == project_id, AIProviderConfig.is_active.is_(True), AIProviderConfig.stage == stage)
+            .order_by(AIProviderConfig.priority, AIProviderConfig.created_at, AIProviderConfig.id)
+        )
+        specific = result.scalars().first()
+        if specific is not None:
+            return specific
+        result = await self.session.execute(
+            select(AIProviderConfig)
+            .where(AIProviderConfig.project_id == project_id, AIProviderConfig.is_active.is_(True), AIProviderConfig.stage.is_(None))
             .order_by(AIProviderConfig.priority, AIProviderConfig.created_at, AIProviderConfig.id)
         )
         return result.scalars().first()
