@@ -8,6 +8,7 @@ from app.engines.layout_engine.freeform import (
     validate_freeform_layout,
 )
 from app.engines.layout_engine.service import CSS_STYLES, generate_layout_html
+from app.engines.layout_engine.templates import STYLE_PRESETS
 
 
 def photo(photo_id: str, width: int, height: int):
@@ -62,3 +63,11 @@ def test_html_uses_freeform_geometry_without_photo_placeholders_or_captions():
     assert 'class="page-copy' not in html
     assert "object-fit: contain" in CSS_STYLES
     assert "background: transparent" in CSS_STYLES
+
+
+def test_print_styles_include_the_container_cjk_font():
+    assert "'Noto Sans CJK SC'" in CSS_STYLES
+    for style in STYLE_PRESETS.values():
+        assert "'Noto Sans CJK SC'" in style["heading_font"]
+        assert "'Noto Sans CJK SC'" in style["body_font"]
+        assert "'Noto Sans CJK SC'" in style["display_font"]

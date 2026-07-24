@@ -34,6 +34,7 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR_HOST}|g; s|security.debian.org|${APT_M
         curl \
         wget \
         fonts-liberation \
+        fonts-noto-cjk \
         libasound2 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \
