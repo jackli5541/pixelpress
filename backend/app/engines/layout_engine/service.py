@@ -135,7 +135,7 @@ CSS_STYLES = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { background: #d9d1c4; }
 body {
-  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   color: #111827;
   padding: 16px 0 28px;
 }
@@ -202,7 +202,7 @@ body {
 }
 .page-kicker,
 .page-role {
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif);
   text-transform: uppercase;
   letter-spacing: 0.22em;
   color: var(--page-accent, #c08457);
@@ -217,7 +217,7 @@ body {
 }
 .page-subtitle,
 .page-summary {
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif);
   color: var(--page-secondary, #6b7280);
   font-size: 10pt;
   line-height: 1.5;
@@ -256,7 +256,7 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--page-secondary, #6b7280);
-  font: 9pt/1.55 var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font: 9pt/1.55 var(--page-body-font, 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif);
   background: transparent;
 }
 .photo-layout {
@@ -293,7 +293,7 @@ body {
   font-size: 8.3pt;
   line-height: 1.45;
   color: var(--page-secondary, #6b7280);
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif);
   background: var(--page-caption-bg, rgba(255,255,255,0.88));
   border-radius: 2.2mm;
   padding: 1.3mm 1.6mm;
@@ -509,7 +509,7 @@ body {
 .cover-subtitle,
 .chapter-desc,
 .closer-text {
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Noto Sans CJK SC', 'Noto Sans SC', sans-serif);
   font-size: 11pt;
   line-height: 1.6;
   color: var(--page-secondary, #6b7280);
@@ -586,9 +586,9 @@ def _dimensions_for(print_spec: dict[str, Any] | None) -> tuple[float, float]:
 
 def _resolve_style(style_key: str, style_presets: dict[str, dict[str, Any]]) -> dict[str, Any]:
     base_style = {
-        "heading_font": "'Georgia', serif",
-        "body_font": "'Noto Sans SC', sans-serif",
-        "display_font": "'Georgia', serif",
+        "heading_font": "'Georgia', 'Noto Sans CJK SC', serif",
+        "body_font": "'Noto Sans CJK SC', 'Noto Sans SC', sans-serif",
+        "display_font": "'Georgia', 'Noto Sans CJK SC', serif",
         "primary_color": "#111827",
         "secondary_color": "#6b7280",
         "accent_color": "#c08457",
