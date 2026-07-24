@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from app.core.config import get_settings
+
 from .helpers import create_album, create_auth_headers, run_task_worker, upload_photo
 
 
@@ -184,6 +188,34 @@ def test_preview_export_and_download_current_flow(client):
     assert download_response.status_code == 200
     assert download_response.content
     assert b"data:image/jpeg;base64," in download_response.content
+
+    assert export_record["file_name"].endswith(".html")
+    export_storage_path = Path(get_settings().uploads_dir) / export_record["file_path"]
+    assert export_storage_path.exists()
+    renamed = client.patch(
+        f"/api/v1/albums/{album['id']}/export/{export_record['id']}",
+        json={"file_name": "renamed-album.html"},
+        headers=headers,
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["data"]["file_name"] == "renamed-album.html"
+    invalid_name = client.patch(
+        f"/api/v1/albums/{album['id']}/export/{export_record['id']}",
+        json={"file_name": "wrong.pdf"},
+        headers=headers,
+    )
+    assert invalid_name.status_code == 422
+
+    renamed_download = client.get(
+        f"/api/v1/albums/{album['id']}/export/download/{export_record['id']}",
+        headers=headers,
+    )
+    assert "renamed-album.html" in renamed_download.headers["content-disposition"]
+
+    deleted = client.delete(f"/api/v1/albums/{album['id']}/export/{export_record['id']}", headers=headers)
+    assert deleted.status_code == 200
+    assert not export_storage_path.exists()
+    assert client.get(f"/api/v1/albums/{album['id']}/exports", headers=headers).json()["data"] == []
 
     assert exports[0]["id"] == export_record["id"]
 

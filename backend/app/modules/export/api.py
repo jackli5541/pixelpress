@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
@@ -18,6 +19,10 @@ from app.services.export_service import ExportService
 from app.services.task_service import TaskConflictError
 
 router = APIRouter(prefix="/albums/{album_id}/export", tags=["export"])
+
+
+class RenameExportPayload(BaseModel):
+    file_name: str
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
@@ -61,7 +66,7 @@ async def download_export(
     export_record, content = result
     fmt = export_record.format or "html"
     media_type = "application/pdf" if fmt == "pdf" else "text/html"
-    source_name = Path(export_record.file_path or f"{export_id}.{fmt}").name
+    source_name = export_record.file_name or Path(export_record.file_path or f"{export_id}.{fmt}").name
     suffix = Path(source_name).suffix or (".pdf" if fmt == "pdf" else ".html")
 
     with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
@@ -78,3 +83,34 @@ async def download_export(
         media_type=media_type,
         background=BackgroundTask(_cleanup_temp_file),
     )
+
+
+@router.patch("/{export_id}")
+async def rename_export(
+    album_id: str,
+    export_id: str,
+    payload: RenameExportPayload,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    await require_export_access(db, user, album_id, export_id)
+    try:
+        updated = await ExportService(db).rename_export(album_id, export_id, payload.file_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="export not found")
+    return success_response(updated, "export renamed")
+
+
+@router.delete("/{export_id}")
+async def delete_export(
+    album_id: str,
+    export_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    await require_export_access(db, user, album_id, export_id)
+    if not await ExportService(db).delete_export(album_id, export_id):
+        raise HTTPException(status_code=404, detail="export not found")
+    return success_response(None, "export deleted")

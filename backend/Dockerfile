@@ -34,6 +34,8 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR_HOST}|g; s|security.debian.org|${APT_M
         curl \
         wget \
         fonts-liberation \
+        fonts-noto-cjk \
+        fontconfig \
         libasound2 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \
@@ -59,6 +61,7 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR_HOST}|g; s|security.debian.org|${APT_M
         libxkbcommon0 \
         libxrandr2 \
         xdg-utils \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt

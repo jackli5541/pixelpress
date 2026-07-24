@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.common.enums import AlbumStatus
@@ -282,12 +283,14 @@ def serialize_task(task: Task) -> dict[str, Any]:
 
 
 def serialize_export(export: Export) -> dict[str, Any]:
+    fallback_name = Path(export.file_path).name if export.file_path else f"{export.id}.{export.format or 'html'}"
     return {
         "id": export.id,
         "album_id": export.album_id,
         "status": export.status,
         "format": export.format,
         "file_path": export.file_path,
+        "file_name": export.file_name or fallback_name,
         "file_size": export.file_size,
         "created_at": _iso(export.created_at),
         "task_id": export.task_id,

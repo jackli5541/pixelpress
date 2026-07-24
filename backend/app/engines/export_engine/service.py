@@ -93,10 +93,10 @@ async def _html_to_pdf(
     output_path: Path,
     page_size: str = "A4",
     print_spec: dict[str, Any] | None = None,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, list[str]]:
     async_playwright = _get_playwright()
     if async_playwright is None:
-        return False, "Playwright is not installed"
+        return False, "Playwright is not installed", []
 
     normalized_print_spec, _ = normalize_print_spec(print_spec, page_size)
     page_size = normalized_print_spec["book_size"]
@@ -117,6 +117,7 @@ async def _html_to_pdf(
 
     temp_html_path: Path | None = None
     browser = None
+    font_warnings: list[str] = []
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
@@ -142,6 +143,19 @@ async def _html_to_pdf(
                 })
                 """
             )
+            await page.evaluate("() => document.fonts.ready")
+            font_status = await page.evaluate(
+                """
+                () => ({
+                  sans: document.fonts.check('12px "Microsoft YaHei"') || document.fonts.check('12px "Noto Sans CJK SC"'),
+                  serif: document.fonts.check('12px "SimSun"') || document.fonts.check('12px "Noto Serif CJK SC"')
+                })
+                """
+            )
+            if not font_status.get("sans"):
+                font_warnings.append("preferred CJK sans-serif font unavailable; browser fallback used")
+            if not font_status.get("serif"):
+                font_warnings.append("preferred CJK serif font unavailable; browser fallback used")
             await page.pdf(
                 path=str(output_path),
                 format="A4" if page_size == "A4" else None,
@@ -157,12 +171,12 @@ async def _html_to_pdf(
                 },
             )
             browser = None
-        return True, None
+        return True, None, font_warnings
     except Exception as exc:
         message = str(exc)
         if "Executable doesn't exist" in message or "Please run the following command to download new browsers" in message:
-            return False, f"{message} {MISSING_CHROMIUM_HINT}"
-        return False, message
+            return False, f"{message} {MISSING_CHROMIUM_HINT}", font_warnings
+        return False, message, font_warnings
     finally:
         if browser is not None:
             await browser.close()
@@ -182,7 +196,8 @@ async def export_to_pdf(
     normalized_print_spec, warnings = normalize_print_spec(print_spec, page_size)
 
     pdf_path = EXPORTS_DIR / f"{safe_name}_{export_id[:8]}.pdf"
-    success, error_message = await _html_to_pdf(html_content, pdf_path, page_size, print_spec=normalized_print_spec)
+    success, error_message, font_warnings = await _html_to_pdf(html_content, pdf_path, page_size, print_spec=normalized_print_spec)
+    warnings.extend(font_warnings)
 
     if not success:
         failure_message = "Playwright PDF export failed"

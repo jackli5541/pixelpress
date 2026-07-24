@@ -135,7 +135,7 @@ CSS_STYLES = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { background: #d9d1c4; }
 body {
-  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif;
   color: #111827;
   padding: 16px 0 28px;
 }
@@ -202,7 +202,7 @@ body {
 }
 .page-kicker,
 .page-role {
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif);
   text-transform: uppercase;
   letter-spacing: 0.22em;
   color: var(--page-accent, #c08457);
@@ -217,7 +217,7 @@ body {
 }
 .page-subtitle,
 .page-summary {
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif);
   color: var(--page-secondary, #6b7280);
   font-size: 10pt;
   line-height: 1.5;
@@ -247,7 +247,7 @@ body {
 .freeform-photo img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: var(--photo-fit, contain);
   display: block;
 }
 .page-description {
@@ -256,7 +256,7 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--page-secondary, #6b7280);
-  font: 9pt/1.55 var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font: 9pt/1.55 var(--page-body-font, 'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif);
   background: transparent;
 }
 .photo-layout {
@@ -293,7 +293,7 @@ body {
   font-size: 8.3pt;
   line-height: 1.45;
   color: var(--page-secondary, #6b7280);
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif);
   background: var(--page-caption-bg, rgba(255,255,255,0.88));
   border-radius: 2.2mm;
   padding: 1.3mm 1.6mm;
@@ -509,7 +509,7 @@ body {
 .cover-subtitle,
 .chapter-desc,
 .closer-text {
-  font-family: var(--page-body-font, 'Noto Sans SC', sans-serif);
+  font-family: var(--page-body-font, 'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif);
   font-size: 11pt;
   line-height: 1.6;
   color: var(--page-secondary, #6b7280);
@@ -586,9 +586,9 @@ def _dimensions_for(print_spec: dict[str, Any] | None) -> tuple[float, float]:
 
 def _resolve_style(style_key: str, style_presets: dict[str, dict[str, Any]]) -> dict[str, Any]:
     base_style = {
-        "heading_font": "'Georgia', serif",
-        "body_font": "'Noto Sans SC', sans-serif",
-        "display_font": "'Georgia', serif",
+        "heading_font": "'Times New Roman', SimSun, 'Noto Serif CJK SC', 'Liberation Serif', serif",
+        "body_font": "'Microsoft YaHei', Arial, 'Noto Sans CJK SC', 'Liberation Sans', sans-serif",
+        "display_font": "'Times New Roman', SimSun, 'Noto Serif CJK SC', 'Liberation Serif', serif",
         "primary_color": "#111827",
         "secondary_color": "#6b7280",
         "accent_color": "#c08457",
@@ -695,17 +695,18 @@ def _render_freeform(layout_meta: dict[str, Any], photos: list[dict[str, Any]]) 
             f"{key}:{float(element[value]) * 100:.6f}%"
             for key, value in (("left", "x"), ("top", "y"), ("width", "width"), ("height", "height"))
         )
+        style += f";--photo-fit:{escape(str(element.get('fit') or 'contain'), quote=True)}"
         parts.append(f'<figure class="freeform-photo" data-photo-id="{escape(str(element.get("photo_id")), quote=True)}" style="{style}"><img src="{src}" alt="{alt}" loading="eager" /></figure>')
     description = layout_meta.get("description") or {}
     text = str(description.get("text") or "").strip()
     if text:
         width = float(description.get("width", 0.64))
-        height = description_height(text, width)
+        height = float(description.get("height", description_height(text, width)))
         style = ";".join((
             f"left:{float(description.get('x', 0.18)) * 100:.6f}%",
             f"top:{float(description.get('y', 0.72)) * 100:.6f}%",
             f"width:{width * 100:.6f}%",
-            f"min-height:{height * 100:.6f}%",
+            f"height:{height * 100:.6f}%",
         ))
         parts.append(f'<p class="page-description" style="{style}">{escape(text)}</p>')
     return "".join(parts)
@@ -739,6 +740,7 @@ def generate_layout_html(
         page_width_mm=width_mm,
         page_height_mm=height_mm,
         safe_margin_mm=safe_margin,
+        template=str(layout.get("template") or "grid_3"),
     )
     freeform_html = _render_freeform(layout_meta, photos)
     css_class = layout.get("css_class", "layout-grid-3")

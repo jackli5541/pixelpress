@@ -28,3 +28,14 @@ class ExportRepository:
             select(Export).where(Export.album_id == album_id, Export.id == export_id)
         )
         return result.scalar_one_or_none()
+
+    async def update_export(self, export: Export, payload: dict) -> Export:
+        for key, value in payload.items():
+            setattr(export, key, value)
+        await self.session.flush()
+        await self.session.refresh(export)
+        return export
+
+    async def delete_export(self, export: Export) -> None:
+        await self.session.delete(export)
+        await self.session.flush()

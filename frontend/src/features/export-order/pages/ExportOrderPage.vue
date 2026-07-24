@@ -5,7 +5,7 @@ import SectionCard from '@/shared/components/SectionCard.vue'
 import StoryHero from '@/shared/components/StoryHero.vue'
 import WorkflowStepper from '@/shared/components/WorkflowStepper.vue'
 import AlbumTaskStatusCard from '@/shared/components/AlbumTaskStatusCard.vue'
-import { getAccessToken, httpGet, httpPost } from '@/shared/api/http'
+import { getAccessToken, httpDelete, httpGet, httpPatch, httpPost } from '@/shared/api/http'
 import type { ExportItem, TaskItem } from '@/shared/types/album'
 import { useAlbumTaskMonitor } from '@/shared/composables/useAlbumTaskMonitor'
 
@@ -31,6 +31,9 @@ const activeExportFormat = ref<'html' | 'pdf' | ''>('')
 const previewHtml = ref('')
 const showPreview = ref(false)
 const previewLoading = ref(false)
+const editingExportId = ref('')
+const editingFileStem = ref('')
+const exportActionId = ref('')
 
 const albumId = computed(() => {
   const id = route.params.id
@@ -52,6 +55,60 @@ function formatFileSize(bytes: number | undefined) {
 
 function exportLabel(item: ExportItem) {
   return item.format === 'pdf' ? 'PDF' : 'HTML'
+}
+
+function fileExtension(item: ExportItem) {
+  return item.format === 'pdf' ? '.pdf' : '.html'
+}
+
+function startRename(item: ExportItem) {
+  const extension = fileExtension(item)
+  editingExportId.value = item.id
+  editingFileStem.value = item.file_name.toLowerCase().endsWith(extension)
+    ? item.file_name.slice(0, -extension.length)
+    : item.file_name
+}
+
+function cancelRename() {
+  editingExportId.value = ''
+  editingFileStem.value = ''
+}
+
+async function saveRename(item: ExportItem) {
+  const extension = fileExtension(item)
+  let stem = editingFileStem.value.trim()
+  if (stem.toLowerCase().endsWith(extension)) stem = stem.slice(0, -extension.length).trim()
+  if (!stem) {
+    errorMessage.value = '文件名不能为空。'
+    return
+  }
+  exportActionId.value = item.id
+  errorMessage.value = ''
+  try {
+    const response = await httpPatch<ExportItem>(`/albums/${albumId.value}/export/${item.id}`, { file_name: `${stem}${extension}` })
+    const index = exportsInfo.value.findIndex((current) => current.id === item.id)
+    if (index >= 0) exportsInfo.value[index] = response.data
+    cancelRename()
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    exportActionId.value = ''
+  }
+}
+
+async function deleteExport(item: ExportItem) {
+  if (!confirm(`确定删除导出文件“${item.file_name}”吗？此操作无法恢复。`)) return
+  exportActionId.value = item.id
+  errorMessage.value = ''
+  try {
+    await httpDelete(`/albums/${albumId.value}/export/${item.id}`)
+    exportsInfo.value = exportsInfo.value.filter((current) => current.id !== item.id)
+    if (editingExportId.value === item.id) cancelRename()
+  } catch (error: any) {
+    errorMessage.value = error.message
+  } finally {
+    exportActionId.value = ''
+  }
 }
 
 function getQueuedExportMessage(format: 'html' | 'pdf') {
@@ -156,7 +213,7 @@ async function downloadExport(item: ExportItem) {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${item.id}.${item.format === 'pdf' ? 'pdf' : 'html'}`
+    link.download = item.file_name
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -286,21 +343,29 @@ onBeforeUnmount(() => {
     >
       <div class="space-y-3">
         <article v-for="item in exportsInfo" :key="item.id" class="flex flex-wrap items-center justify-between gap-4 rounded-[22px] border border-[rgba(79,59,42,0.14)] bg-white/72 px-5 py-4">
-          <div>
-            <p class="text-sm font-medium text-[#241c16]">
-              {{ exportLabel(item) }} 文件
+          <div class="min-w-0 flex-1">
+            <div v-if="editingExportId === item.id" class="flex max-w-xl items-center gap-2">
+              <input v-model="editingFileStem" maxlength="115" class="min-w-0 flex-1 rounded-xl border border-[rgba(79,59,42,0.22)] bg-white px-3 py-2 text-sm text-[#241c16] outline-none focus:border-[#b98743]" @keyup.enter="saveRename(item)" @keyup.esc="cancelRename" />
+              <span class="text-sm text-[#78695c]">{{ fileExtension(item) }}</span>
+            </div>
+            <p v-else class="break-all text-sm font-medium text-[#241c16]">
+              {{ item.file_name }}
               <span class="ml-2 rounded-full bg-[#f4e0be] px-3 py-1 text-xs text-[#8e6d45]">{{ item.status }}</span>
             </p>
-            <p class="mt-2 text-xs text-[#78695c]">{{ item.created_at }} | {{ formatFileSize(item.file_size || undefined) }}</p>
+            <p class="mt-2 text-xs text-[#78695c]">{{ exportLabel(item) }} · {{ item.created_at }} | {{ formatFileSize(item.file_size || undefined) }}</p>
           </div>
-          <button
-            v-if="item.status === 'completed' || item.file_path"
-            class="story-button px-5 py-3 text-sm"
-            @click="downloadExport(item)"
-          >
-            下载
-          </button>
-          <span v-else class="rounded-full bg-[rgba(43,31,24,0.08)] px-4 py-2 text-sm text-[#5f5347]">{{ item.status }}</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <template v-if="editingExportId === item.id">
+              <button class="story-button px-4 py-2 text-sm" :disabled="exportActionId === item.id" @click="saveRename(item)">保存</button>
+              <button class="story-button-secondary px-4 py-2 text-sm" :disabled="exportActionId === item.id" @click="cancelRename">取消</button>
+            </template>
+            <template v-else>
+              <button class="story-button-secondary px-4 py-2 text-sm" :disabled="!!exportActionId" @click="startRename(item)">重命名</button>
+              <button v-if="item.status === 'completed' || item.file_path" class="story-button px-4 py-2 text-sm" :disabled="!!exportActionId" @click="downloadExport(item)">下载</button>
+              <span v-else class="rounded-full bg-[rgba(43,31,24,0.08)] px-4 py-2 text-sm text-[#5f5347]">{{ item.status }}</span>
+              <button class="rounded-full bg-[#f2d8d2] px-4 py-2 text-sm text-[#8b4339] disabled:opacity-50" :disabled="!!exportActionId" @click="deleteExport(item)">{{ exportActionId === item.id ? '删除中…' : '删除' }}</button>
+            </template>
+          </div>
         </article>
       </div>
     </SectionCard>

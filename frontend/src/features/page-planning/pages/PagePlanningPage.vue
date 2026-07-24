@@ -73,6 +73,18 @@ const templateLabels: Record<string, string> = {
   grid_4: '四图',
   one_large_two_small: '一大两小',
 }
+const templateKeysByPhotoCount: Record<number, string[]> = {
+  1: ['full_page'],
+  2: ['half_half', 'two_column'],
+  3: ['grid_3', 'one_large_two_small'],
+  4: ['grid_4'],
+}
+
+function templateOptions(page: PageItem) {
+  const count = getPhotos(page.photo_ids || []).length
+  const keys = templateKeysByPhotoCount[count] || [page.template]
+  return keys.map((key) => ({ key, label: templateLabels[key] || key }))
+}
 
 interface ChapterPageGroup {
   chapter: ChapterItem
@@ -219,6 +231,8 @@ async function startRender() {
 }
 
 async function changeTemplate(page: PageItem, template: string) {
+  if (template === page.template) return
+  if (!confirm('切换模板会重置本页已经手工调整的位置和大小，确定继续吗？')) return
   try {
     const response = await httpPatch<PageItem>(`/albums/${albumId.value}/pages/${page.id}`, { template })
     page.template = response.data.template
@@ -412,10 +426,11 @@ watch(
                 <div class="flex items-center gap-2">
                   <select
                     :value="page.template"
+                    :disabled="templateOptions(page).length < 2"
                     class="rounded-full border border-[rgba(224,177,106,0.18)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-xs text-[var(--story-text)] outline-none"
                     @change="changeTemplate(page, ($event.target as HTMLSelectElement).value)"
                   >
-                    <option v-for="(label, key) in templateLabels" :key="key" :value="key">{{ label }}</option>
+                    <option v-for="option in templateOptions(page)" :key="option.key" :value="option.key">{{ option.label }}</option>
                   </select>
                   <button class="rounded-full bg-[#f2d8d2] px-3 py-2 text-xs text-[#8b4339]" @click="deletePage(page.id)">删除</button>
                 </div>
@@ -502,10 +517,11 @@ watch(
             <div class="flex items-center gap-2">
               <select
                 :value="page.template"
+                :disabled="templateOptions(page).length < 2"
                 class="rounded-full border border-[rgba(224,177,106,0.18)] bg-[rgba(255,255,255,0.06)] px-3 py-2 text-xs text-[var(--story-text)] outline-none"
                 @change="changeTemplate(page, ($event.target as HTMLSelectElement).value)"
               >
-                <option v-for="(label, key) in templateLabels" :key="key" :value="key">{{ label }}</option>
+                <option v-for="option in templateOptions(page)" :key="option.key" :value="option.key">{{ option.label }}</option>
               </select>
               <button class="rounded-full bg-[#f2d8d2] px-3 py-2 text-xs text-[#8b4339]" @click="deletePage(page.id)">删除</button>
             </div>

@@ -207,6 +207,7 @@ class LayoutService:
                 page_width_mm=width_mm,
                 page_height_mm=height_mm,
                 safe_margin_mm=float(print_spec.get("safe_margin_mm", 8)),
+                template=page.template,
             )
             result.append(item)
         return result

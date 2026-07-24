@@ -12,6 +12,7 @@ from app.repositories.album_repo import AlbumRepository
 from app.repositories.export_repo import ExportRepository
 from app.repositories.task_repo import TaskRepository
 from app.services.render_artifact_service import RenderArtifactService
+from app.services.serializers import serialize_export
 from app.services.task_runtime_service import TaskRuntimeService
 from app.services.task_service import TaskService
 from app.storage.file_store import get_file_storage
@@ -20,6 +21,23 @@ PIPELINE_NAME = "export"
 PIPELINE_VERSION = "p0-async-v1"
 JOB_NAME = "run_export_job"
 EXPORTABLE_STATUSES = {AlbumStatus.RENDERED, AlbumStatus.EXPORTED}
+INVALID_FILE_NAME_CHARS = set('<>:"/\\|?*')
+WINDOWS_RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def validate_export_file_name(file_name: str, export_format: str) -> str:
+    normalized = str(file_name or "").strip()
+    if not normalized or len(normalized) > 120:
+        raise ValueError("文件名长度必须为 1 到 120 个字符")
+    if any(char in INVALID_FILE_NAME_CHARS or ord(char) < 32 for char in normalized):
+        raise ValueError("文件名包含 Windows 不支持的字符")
+    expected_suffix = f".{export_format.lower()}"
+    if Path(normalized).suffix.lower() != expected_suffix:
+        raise ValueError(f"文件扩展名必须为 {expected_suffix}")
+    stem = Path(normalized).stem
+    if not stem or stem.endswith((".", " ")) or stem.upper() in WINDOWS_RESERVED_NAMES:
+        raise ValueError("文件名在 Windows 中不可用")
+    return f"{stem}{expected_suffix}"
 
 
 class ExportService:
@@ -184,6 +202,7 @@ class ExportService:
                     "format": export_format,
                     "status": "completed",
                     "file_path": stored.storage_key,
+                    "file_name": output_path.name if export_format == "pdf" else export_name,
                     "file_size": stored.size,
                 }
             )
@@ -244,16 +263,26 @@ class ExportService:
         if album is None:
             return None
         exports = await self.export_repo.list_exports(album_id)
-        return [
-            {
-                "id": item.id,
-                "album_id": item.album_id,
-                "status": item.status,
-                "format": item.format,
-                "file_path": item.file_path,
-                "file_size": item.file_size,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
-                "task_id": item.task_id,
-            }
-            for item in exports
-        ]
+        return [serialize_export(item) for item in exports]
+
+    async def rename_export(self, album_id: str, export_id: str, file_name: str):
+        export = await self.export_repo.get_export(album_id, export_id)
+        if export is None:
+            return None
+        normalized = validate_export_file_name(file_name, export.format or "html")
+        updated = await self.export_repo.update_export(export, {"file_name": normalized})
+        await self.session.commit()
+        return serialize_export(updated)
+
+    async def delete_export(self, album_id: str, export_id: str) -> bool:
+        export = await self.export_repo.get_export(album_id, export_id)
+        if export is None:
+            return False
+        if export.file_path:
+            try:
+                await self.storage.delete_file(export.file_path)
+            except FileNotFoundError:
+                pass
+        await self.export_repo.delete_export(export)
+        await self.session.commit()
+        return True

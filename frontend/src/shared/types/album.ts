@@ -56,6 +56,7 @@ export interface ExportItem {
   album_id: string
   status: string
   file_path: string | null
+  file_name: string
   created_at: string
   task_id: string
   format?: string
